@@ -1,0 +1,11 @@
+{
+  "name": "Fiş Tarama Sistemi",
+  "short_name": "Fiş Tara",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f6f2",
+  "theme_color": "#2f5233",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
