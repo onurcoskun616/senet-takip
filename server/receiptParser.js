@@ -36,10 +36,30 @@ function findTime(lines) {
 }
 
 const AMOUNT_RE = /(\d{1,3}(?:\.\d{3})*(?:,\d{2})|\d+[.,]\d{2})\s*(?:TL|₺)?\s*$/i;
+// Bir satirin tamamen (baslik/etiket olmadan) bir tutardan ibaret olup
+// olmadigini kontrol eder - orn. "* 205,00", "#59,90".
+const BARE_AMOUNT_RE = /^[*#$₺\s]*(\d{1,3}(?:\.\d{3})*(?:,\d{2})|\d+[.,]\d{2})\s*(?:TL|₺)?[*#\s]*$/i;
 
 function findAmountOnLine(line) {
   const m = line.match(AMOUNT_RE);
   return m ? parseAmount(m[1]) : null;
+}
+
+// Fişlerde etiket (TOPLAM, KDV vb.) ile tutari genellikle ayni satirda
+// olur, ama bazi fişlerde/OCR okumalarinda etiket kendi satirinda, tutar
+// ise bir sonraki (bazen bir onceki) satirda tek basina bulunur. Once ayni
+// satira bakiyoruz, yoksa yakin satirlardaki "cıplak" tutara bakiyoruz.
+function findAmountNear(lines, index) {
+  const onLine = findAmountOnLine(lines[index]);
+  if (onLine !== null) return onLine;
+
+  for (const offset of [1, 2, -1]) {
+    const neighbor = lines[index + offset];
+    if (!neighbor) continue;
+    const m = neighbor.match(BARE_AMOUNT_RE);
+    if (m) return parseAmount(m[1]);
+  }
+  return null;
 }
 
 function findTotal(lines) {
@@ -48,17 +68,17 @@ function findTotal(lines) {
   const excludeKeywords = ['ARA TOPLAM', 'KDV'];
 
   for (const kw of priorityKeywords) {
-    for (const line of lines) {
-      if (line.toLocaleUpperCase('tr').includes(kw)) {
-        const amt = findAmountOnLine(line);
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].toLocaleUpperCase('tr').includes(kw)) {
+        const amt = findAmountNear(lines, i);
         if (amt !== null) return amt;
       }
     }
   }
-  for (const line of lines) {
-    const upper = line.toLocaleUpperCase('tr');
+  for (let i = 0; i < lines.length; i++) {
+    const upper = lines[i].toLocaleUpperCase('tr');
     if (fallbackKeywords.some((kw) => upper.includes(kw)) && !excludeKeywords.some((kw) => upper.includes(kw) && !upper.includes('GENEL'))) {
-      const amt = findAmountOnLine(line);
+      const amt = findAmountNear(lines, i);
       if (amt !== null) return amt;
     }
   }
@@ -68,10 +88,10 @@ function findTotal(lines) {
 function findKdv(lines) {
   let total = 0;
   let found = false;
-  for (const line of lines) {
-    const upper = line.toLocaleUpperCase('tr');
+  for (let i = 0; i < lines.length; i++) {
+    const upper = lines[i].toLocaleUpperCase('tr');
     if (upper.includes('KDV') || upper.includes('TOPKDV')) {
-      const amt = findAmountOnLine(line);
+      const amt = findAmountNear(lines, i);
       if (amt !== null) {
         total += amt;
         found = true;
