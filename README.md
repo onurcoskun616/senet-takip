@@ -129,6 +129,13 @@ Oranına Göre Kırılım" bölümüne ve Excel çıktısına ayrı sütunlar ol
 Fişte bu kırılım tablosu hiç yoksa (yalnızca tek bir toplam KDV varsa) ilgili
 alanlar boş kalır; bu normaldir, mevcut olmayan bir veri türetilmez.
 
+> Not: Uygulama bir PWA olduğu için telefonunuzda arayüz dosyaları (Service
+> Worker) önbelleğe alınır. Her deploy sonrası telefonda en güncel arayüzün
+> yüklendiğinden emin olmak için sayfayı birkaç saniye bekleyip yeniden
+> açın/yenileyin; `sw.js` artık ağdan gelen sürümü öncelikli kullanacak
+> (network-first) şekilde ayarlıdır, bu yüzden yeni bir deploy'dan sonraki
+> ilk açılışta güncel sürüm otomatik çekilir.
+
 ## API Uç Noktaları
 
 | Yöntem | Yol                        | Açıklama                                   |
