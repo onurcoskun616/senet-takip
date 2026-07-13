@@ -332,6 +332,10 @@ function isMostlyUppercase(text) {
 
 // Firma adindan once cikabilen, sirket ismi olmayan belge turu basliklari.
 const DOCUMENT_HEADER_RE = /E[-\s]?ARŞİV|E[-\s]?ARSIV|FATURA|BİLGİ\s*FİŞİ|BILGI\s*FISI/i;
+// "Teşekkürler", "Hoş geldiniz" gibi karsilama/vedalasma ifadeleri firma
+// adindan hemen once ya da sonra basilabiliyor; bunlar firma adinin
+// parcasi degildir.
+const GREETING_RE = /TE[ŞS]EKK[UÜ]RLER|TEŞEKKÜR\s*EDERİZ|TESEKKUR\s*EDERIZ|HOŞ\s*GELDİNİZ|HOS\s*GELDINIZ/i;
 
 function findFirma(lines) {
   // Fis basindaki ilk anlamli satir(lar) genelde magaza/firma adidir; isim
@@ -346,7 +350,7 @@ function findFirma(lines) {
     // okunmasindan gelir (orn. yuvarlak bir mühür ikonu "G" gibi
     // okunabiliyor) - gercek bir firma adi bundan cok daha uzundur.
     if (!trimmed || trimmed.length < 3 || /^\d+$/.test(trimmed)) continue;
-    if (DOCUMENT_HEADER_RE.test(trimmed) || !isMostlyUppercase(trimmed)) continue;
+    if (DOCUMENT_HEADER_RE.test(trimmed) || GREETING_RE.test(trimmed) || !isMostlyUppercase(trimmed)) continue;
     if (stopRe.test(trimmed)) break;
     nameParts.push(trimmed);
     if (nameParts.length >= 3) break;
