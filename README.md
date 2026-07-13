@@ -90,6 +90,26 @@ Bilgisayarınız ve telefonunuz **aynı Wi-Fi ağında** olmalı.
 > geçerseniz sunucuyu HTTPS ile (örn. bir ters proxy + Let's Encrypt ile)
 > yayınlamanız önerilir.
 
+## Render.com Üzerinde Kalıcı Yayınlama (Opsiyonel)
+
+Aynı Wi-Fi şartı olmadan her yerden erişilebilir sabit bir link isterseniz,
+projeyi ücretsiz Render.com üzerinde yayınlayabilirsiniz:
+
+1. https://render.com adresinde GitHub hesabınızla üye olun.
+2. **New +  >  Web Service** deyip bu GitHub reposunu seçin (repo bu depoya
+   push edilmiş `render.yaml` dosyasını otomatik algılar; algılamazsa Build
+   Command: `npm install`, Start Command: `npm start` girin).
+3. **Environment** sekmesinden `GOOGLE_VISION_API_KEY` değişkenini ekleyip
+   kendi anahtarınızı yapıştırın.
+4. Deploy tamamlanınca size `https://<servis-adi>.onrender.com` şeklinde
+   sabit bir link verir; bunu telefonunuzdan doğrudan açabilirsiniz.
+
+> Not: Render'ın ücretsiz planında disk kalıcı değildir — her yeniden
+> başlatma/deploy'da `data/fisler.db` sıfırlanır. Sadece test/demo amaçlı
+> kullanım için uygundur; gerçek/sürekli kullanım için ücretli bir "persistent
+> disk" eklemeniz veya harici bir veritabanına (örn. Render PostgreSQL)
+> geçmeniz gerekir.
+
 ## Fiş Ayrıştırma Hakkında
 
 `server/receiptParser.js`, Türk yazar kasa fişlerinde sık görülen ifadelere
