@@ -342,7 +342,9 @@ function findFirma(lines) {
   // birden fazla satira yayilmis olabilir (orn. "FUNIDO" / "BİLİŞİM" /
   // "TEKNOLOJİLERİ A.Ş."). Adres/vergi/tarih bilgisine varana kadar
   // birbirini izleyen bu satirlari tek bir firma adinda birlestiriyoruz.
-  const stopRe = /(VKN|VD\s*[:.]|VERG[İI]|ADRES|TEL\s*[:.]|CAD\.|SOK\.|MAH\.|BLV|NO\s*[:.]?\s*\d|\d{2}[.\/-]\d{2}[.\/-]\d{4}|\/[A-ZÇĞİÖŞÜ]+$)/i;
+  // VKN/VD (vergi dairesi) "V.D", "VD", "V.D." gibi farkli yazilabiliyor;
+  // \.? ile nokta olsun olmasin yakalaniyor.
+  const stopRe = /(VKN|\bV\.?D\.?\b|VERG[İI]|ADRES|TEL\s*[:.]|CAD\.|SOK\.|MAH\.|BLV|NO\s*[:.]?\s*\d|\d{2}[.\/-]\d{2}[.\/-]\d{4}|\/[A-ZÇĞİÖŞÜ]+$)/i;
   const nameParts = [];
   for (const line of lines.slice(0, 8)) {
     const trimmed = line.trim();
@@ -350,8 +352,13 @@ function findFirma(lines) {
     // okunmasindan gelir (orn. yuvarlak bir mühür ikonu "G" gibi
     // okunabiliyor) - gercek bir firma adi bundan cok daha uzundur.
     if (!trimmed || trimmed.length < 3 || /^\d+$/.test(trimmed)) continue;
-    if (DOCUMENT_HEADER_RE.test(trimmed) || GREETING_RE.test(trimmed) || !isMostlyUppercase(trimmed)) continue;
+    // Adres/vergi/tarih iceren bir satirsa - buyuk harfli olsun olmasin -
+    // isim burada biter, arama durur. Bu kontrol, kucuk harfli "gurultu"
+    // filtresinden ONCE yapiliyor; aksi halde kucuk/karisik harfle basilmis
+    // bir adres satiri (orn. "Cevizli Mah. Tugay Yolu Cd.") sessizce
+    // atlanip arama yanlislikla vergi dairesi satirina kadar devam ediyordu.
     if (stopRe.test(trimmed)) break;
+    if (DOCUMENT_HEADER_RE.test(trimmed) || GREETING_RE.test(trimmed) || !isMostlyUppercase(trimmed)) continue;
     nameParts.push(trimmed);
     if (nameParts.length >= 3) break;
   }
