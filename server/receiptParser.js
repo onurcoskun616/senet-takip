@@ -401,6 +401,22 @@ function findKdvDetay(lines) {
 const KDV_RATES = ['1', '10', '20'];
 const AMOUNT_TOKEN_RE = /\d{1,3}(?:\.\d{3})*(?:,\d{2})|\d+[.,]\d{2}/g;
 
+// OCR bazen "%" isaretini "2" rakamiyla karistirip yapistiriyor: "%20" ->
+// "220", "%1." -> "21.", "%10" -> "210" gibi (gercek "%" karakteri hic
+// gorunmuyor). Bu, farkli taramalarda tekrarlayan, tahmin edilebilir bir
+// OCR hatasi oldugu icin, gercek "%" bulunamazsa bu "cakisik" deseni son
+// care olarak deniyoruz.
+const CORRUPTED_PERCENT_LOOKUP = { 21: '1', 210: '10', 220: '20' };
+const CORRUPTED_PERCENT_RE = /\b(21|210|220)\b/;
+
+function matchKdvRate(line) {
+  const real = line.match(/%\s*(\d{1,2})\b/);
+  if (real && KDV_RATES.includes(real[1])) return real[1];
+  const corrupted = line.match(CORRUPTED_PERCENT_RE);
+  if (corrupted && CORRUPTED_PERCENT_LOOKUP[corrupted[1]]) return CORRUPTED_PERCENT_LOOKUP[corrupted[1]];
+  return null;
+}
+
 // Iki sayidan (buyugu "dahil" ya da "matrah" olabilir) hangisinin hangisi
 // oldugunu, verilen KDV oranina gore hesaplanan beklenen KDV tutariyla
 // karsilastirarak bulur; ne kadar iyi uydugunu (diff) da dondurur, boylece
@@ -478,9 +494,8 @@ function findKdvBreakdown(lines) {
   const consumed = new Set();
 
   for (let i = startIndex; i < lines.length; i++) {
-    const rateMatch = lines[i].match(/%\s*(\d{1,2})\b/);
-    if (!rateMatch || !KDV_RATES.includes(rateMatch[1])) continue;
-    const rate = rateMatch[1];
+    const rate = matchKdvRate(lines[i]);
+    if (!rate) continue;
     if (result[rate]) continue; // ayni oran icin ilk bulunani kullan
 
     // Ayni satirda tutar(lar) olabilir (orn. "% 20 132.50").
@@ -513,12 +528,6 @@ function findKdvBreakdown(lines) {
   return result;
 }
 
-// Urun satirlarinda KDV orani ya kendi satirinda tek basina gelir (orn.
-// "DANA TRANC YORESEL" \n "% 1" \n "* 1.099,95") ya da urun adiyla ayni
-// satirin SONUNDA yer alir (orn. "MIGROS PLASTIK POSET % 20"). Iki
-// durumu da yakalamak icin satir sonunda "%NN" araniyor.
-const BARE_RATE_RE = /%\s*(\d{1,2})\.?\s*$/;
-
 /**
  * Fişte ayrı bir KDV kırılım tablosu YOKSA (sadece tek bir TOPKDV varsa),
  * her ürün satırının yanındaki kendi KDV oranını (% 1, % 20 vb.) ve o
@@ -530,18 +539,26 @@ const BARE_RATE_RE = /%\s*(\d{1,2})\.?\s*$/;
 function findItemLevelKdvSums(lines) {
   const sums = {};
   for (let i = 0; i < lines.length; i++) {
-    const bareMatch = lines[i].match(BARE_RATE_RE);
-    const rate = bareMatch && KDV_RATES.includes(bareMatch[1]) ? bareMatch[1] : null;
+    const rate = matchKdvRate(lines[i]);
     if (!rate) continue;
 
+    // Once ayni satirda bir tutar var mi bak (orn. "% 10 * 750,00" - oran
+    // ve tutar tek satirda birlikte). Yoksa yakin satirlara bak.
     let amount = null;
-    for (const offset of nearOffsets(2)) {
-      const neighbor = lines[i + offset];
-      if (!neighbor || BARE_RATE_RE.test(neighbor)) continue;
-      const m = neighbor.trim().match(BARE_AMOUNT_RE);
-      if (m) {
-        amount = parseAmount(m[1]);
-        break;
+    const sameLineTokens = lines[i].match(AMOUNT_TOKEN_RE);
+    if (sameLineTokens) {
+      amount = parseAmount(sameLineTokens[sameLineTokens.length - 1]);
+    }
+
+    if (amount === null) {
+      for (const offset of nearOffsets(2)) {
+        const neighbor = lines[i + offset];
+        if (!neighbor || matchKdvRate(neighbor)) continue;
+        const m = neighbor.trim().match(BARE_AMOUNT_RE);
+        if (m) {
+          amount = parseAmount(m[1]);
+          break;
+        }
       }
     }
     if (amount === null) continue;
