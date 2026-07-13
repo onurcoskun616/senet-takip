@@ -70,11 +70,29 @@ function findAmountOnLine(line) {
 }
 
 const ARA_TOPLAM_RE = /ARA\s*TOPLAM/i;
-const GENEL_TOPLAM_RE = /GENEL\s*TOPLAM|TOPLAM\s*TUTAR|ÖDENEN|ODENEN/i;
+// "Genel toplam" turunden acik/kesin ifadeler - bunlar KDV kelimesi
+// gecse bile (orn. "Ödenecek KDV Dahil Tutar") her zaman TOPLAM'dir.
+const GENEL_TOPLAM_RE = /GENEL\s*TOPLAM|TOPLAM\s*TUTAR|ÖDENECEK|KDV\s*DAHİL\s*TUTAR|\bÖDENEN\b|\bODENEN\b/i;
+const KDV_RE = /TOPKDV|KDV/i;
 // Bazi fişlerde "TOPLAM" kisaltilarak sadece "TOP" yazilabiliyor. \b sinirlari
 // sayesinde bu, "ARATOPLAM" veya "TOPKDV" gibi kelimelerin icini yakalamiyor.
 const TOPLAM_RE = /\bTOPLAM\b|\bTOP\b/i;
-const KDV_RE = /TOPKDV|KDV/i;
+
+/**
+ * Bir satirin/paragrafin TOPLAM mi KDV mi yoksa hicbiri mi oldugunu tek
+ * bir yerden, birbirini dislayan bir sirayla belirler. Bu onemli, cunku
+ * "TOPLAM KDV" gibi ifadeler hem "TOPLAM" hem "KDV" kelimesini icerir -
+ * boyle bir satir aslinda KDV tutaridir (Turkce'de "toplam KDV" = KDV
+ * toplami), TOPLAM (genel toplam) degildir. Ayni satiri iki farkli
+ * etikete birden atamak, tutarlarin yer degistirmesine yol aciyordu.
+ */
+function classifyTotalLabel(upper) {
+  if (GENEL_TOPLAM_RE.test(upper)) return { type: 'toplam', priority: 0 };
+  if (KDV_RE.test(upper)) return { type: 'kdv', priority: 1 };
+  if (ARA_TOPLAM_RE.test(upper)) return null;
+  if (TOPLAM_RE.test(upper)) return { type: 'toplam', priority: 1 };
+  return null;
+}
 
 /**
  * TOPLAM ve KDV tutarlarini birlikte cikarir. Once klasik "ETIKET: TUTAR"
@@ -95,9 +113,10 @@ function findTotalAndKdv(lines) {
     const upper = lines[i].toLocaleUpperCase('tr');
     const amt = findAmountOnLine(lines[i]);
     if (amt === null) continue;
-    if (toplam === null && GENEL_TOPLAM_RE.test(upper)) toplam = amt;
-    else if (toplam === null && TOPLAM_RE.test(upper) && !ARA_TOPLAM_RE.test(upper)) toplam = amt;
-    if (kdv === null && KDV_RE.test(upper)) kdv = amt;
+    const label = classifyTotalLabel(upper);
+    if (!label) continue;
+    if (label.type === 'toplam' && toplam === null) toplam = amt;
+    else if (label.type === 'kdv' && kdv === null) kdv = amt;
   }
   if (toplam !== null && kdv !== null) return { toplam, kdv };
 
@@ -108,8 +127,10 @@ function findTotalAndKdv(lines) {
   for (let i = 0; i < lines.length; i++) {
     if (findAmountOnLine(lines[i]) !== null) continue;
     const upper = lines[i].toLocaleUpperCase('tr');
-    if (kdv === null && KDV_RE.test(upper)) pendingLabels.push({ index: i, type: 'kdv' });
-    else if (toplam === null && TOPLAM_RE.test(upper) && !ARA_TOPLAM_RE.test(upper)) pendingLabels.push({ index: i, type: 'toplam' });
+    const label = classifyTotalLabel(upper);
+    if (!label) continue;
+    if (label.type === 'kdv' && kdv === null) pendingLabels.push({ index: i, type: 'kdv' });
+    else if (label.type === 'toplam' && toplam === null) pendingLabels.push({ index: i, type: 'toplam' });
   }
 
   for (const label of pendingLabels) {
@@ -176,9 +197,8 @@ function findTotalAndKdvSpatial(paragraphs) {
   const labelParagraphs = [];
   for (const p of paragraphs) {
     const upper = p.text.toLocaleUpperCase('tr');
-    if (GENEL_TOPLAM_RE.test(upper)) labelParagraphs.push({ p, type: 'toplam', priority: 0 });
-    else if (TOPLAM_RE.test(upper) && !ARA_TOPLAM_RE.test(upper)) labelParagraphs.push({ p, type: 'toplam', priority: 1 });
-    if (KDV_RE.test(upper)) labelParagraphs.push({ p, type: 'kdv', priority: 1 });
+    const label = classifyTotalLabel(upper);
+    if (label) labelParagraphs.push({ p, type: label.type, priority: label.priority });
   }
   labelParagraphs.sort((a, b) => a.priority - b.priority);
 
@@ -255,6 +275,17 @@ function findFisNo(lines) {
       if (m) return m[1];
     }
   }
+
+  // Bazi fişler (orn. e-Arşiv Fatura formati) klasik "FİŞ NO" alani
+  // kullanmiyor; bu durumda FATURA NO veya Sıra No belge kimligi olarak
+  // kullanilabilir.
+  const invoicePatterns = [/FATURA\s*NO\s*[:.]?\s*(\S+)/i, /S[Iİ]RA\s*NO\s*[:.]?\s*(\S+)/i];
+  for (const re of invoicePatterns) {
+    for (const line of lines) {
+      const m = line.match(re);
+      if (m) return m[1];
+    }
+  }
   return null;
 }
 
@@ -268,6 +299,22 @@ function findPaymentMethod(lines) {
   return null;
 }
 
+// Fis basindaki firma adi satirlari neredeyse her zaman BUYUK HARFLE
+// basilidir. "E-Arşiv Fatura" gibi belge turu basliklari ya da bir
+// imza/logo alaninin yanlis OCR'lanmasindan dogan rastgele kelimeler
+// genelde karisik/kucuk harfli cikar - bu satirlari firma adindan
+// eleyerek gercek (buyuk harfli) sirket adina ulasmaya calisiyoruz.
+function isMostlyUppercase(text) {
+  const upperCount = (text.match(/[A-ZÇĞİÖŞÜ]/g) || []).length;
+  const lowerCount = (text.match(/[a-zçğıöşü]/g) || []).length;
+  const total = upperCount + lowerCount;
+  if (total === 0) return true;
+  return upperCount / total >= 0.7;
+}
+
+// Firma adindan once cikabilen, sirket ismi olmayan belge turu basliklari.
+const DOCUMENT_HEADER_RE = /E[-\s]?ARŞİV|E[-\s]?ARSIV|FATURA|BİLGİ\s*FİŞİ|BILGI\s*FISI/i;
+
 function findFirma(lines) {
   // Fis basindaki ilk anlamli satir(lar) genelde magaza/firma adidir; isim
   // birden fazla satira yayilmis olabilir (orn. "FUNIDO" / "BİLİŞİM" /
@@ -275,9 +322,13 @@ function findFirma(lines) {
   // birbirini izleyen bu satirlari tek bir firma adinda birlestiriyoruz.
   const stopRe = /(VKN|VD\s*[:.]|VERG[İI]|ADRES|TEL\s*[:.]|CAD\.|SOK\.|MAH\.|BLV|NO\s*[:.]?\s*\d|\d{2}[.\/-]\d{2}[.\/-]\d{4}|\/[A-ZÇĞİÖŞÜ]+$)/i;
   const nameParts = [];
-  for (const line of lines.slice(0, 6)) {
+  for (const line of lines.slice(0, 8)) {
     const trimmed = line.trim();
-    if (!trimmed || /^\d+$/.test(trimmed)) continue;
+    // Tek harf/kisa parcalar genelde logo/damga gibi seylerin yanlis
+    // okunmasindan gelir (orn. yuvarlak bir mühür ikonu "G" gibi
+    // okunabiliyor) - gercek bir firma adi bundan cok daha uzundur.
+    if (!trimmed || trimmed.length < 3 || /^\d+$/.test(trimmed)) continue;
+    if (DOCUMENT_HEADER_RE.test(trimmed) || !isMostlyUppercase(trimmed)) continue;
     if (stopRe.test(trimmed)) break;
     nameParts.push(trimmed);
     if (nameParts.length >= 3) break;
