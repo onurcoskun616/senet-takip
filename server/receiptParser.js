@@ -117,33 +117,35 @@ function findTotalAndKdv(lines) {
 
 function findFisNo(lines) {
   // Oncelik sirasi onemli: "FİŞ NO" her zaman en dogru kaynak, "EKÜ NO"/
-  // "BELGE NO" gibi diger kasa numaralari fis no degildir. Metin sirasi
-  // karisik gelebildigi icin (bazen EKÜ NO satiri once yakalanabiliyordu)
-  // her deseni TUM satirlarda arayip, oncelikli desen bulunamazsa bir
-  // sonrakine gecen bir siralama kullaniyoruz.
-  const patternsInPriorityOrder = [
-    /F[İI][SŞ]\s*NO\s*[:.]?\s*(\S+)/i,
-    /F[İI][SŞ]\s*[:#]\s*(\S+)/i,
-    /BELGE\s*NO\s*[:.]?\s*(\S+)/i,
-    /EK[UÜ]\s*NO\s*[:.]?\s*(\S+)/i,
-    // OCR "FİŞ NO" ifadesini bazen "TIS NO" olarak yanlis okuyor; son care
-    // olarak bunu da deniyoruz.
-    /T[İI]S\s*NO\s*[:.]?\s*(\S+)/i,
-  ];
-  for (const re of patternsInPriorityOrder) {
+  // "BELGE NO" gibi diger kasa numaralari fis no degildir. Bu yuzden once
+  // her turlu "FİŞ NO" varyasyonunu (ayni satirda, ayri satirda deger
+  // once/sonra) TUM metinde deniyoruz; ancak hicbiri bulunamazsa "EKÜ NO"
+  // gibi dusuk oncelikli alanlara dusuyoruz.
+  const fisInlinePatterns = [/F[İI][SŞ]\s*NO\s*[:.]?\s*(\S+)/i, /F[İI][SŞ]\s*[:#]\s*(\S+)/i, /T[İI]S\s*NO\s*[:.]?\s*(\S+)/i];
+  for (const re of fisInlinePatterns) {
     for (const line of lines) {
       const m = line.match(re);
       if (m) return m[1];
     }
   }
 
-  // Bazi fişlerde deger, "FİŞ NO" etiketinden once (ayri bir satirda) geliyor
-  // (orn. "...0032\nFİŞ NO\n..."). Etiketi tek basina bulup bir onceki
-  // satirda kisa bir sayisal kod ariyoruz.
-  const bareLabelRe = /^(F[İI][SŞ]|T[İI]S)\s*NO\s*[:.]?\s*$/i;
+  // Deger, etiketten ayri bir satirda (once ya da sonra) gelebiliyor
+  // (orn. "...0032\nFİŞ NO\n..." ya da "FİŞ NO\n0085"). Etiketi tek basina
+  // bulup en yakin satirlarda kisa bir sayisal kod ariyoruz.
+  const bareFisLabelRe = /^(F[İI][SŞ]|T[İI]S)\s*NO\s*[:.]?\s*$/i;
   for (let i = 0; i < lines.length; i++) {
-    if (bareLabelRe.test(lines[i]) && lines[i - 1] && /^\d{3,6}$/.test(lines[i - 1].trim())) {
-      return lines[i - 1].trim();
+    if (!bareFisLabelRe.test(lines[i])) continue;
+    for (const offset of nearOffsets(3)) {
+      const neighbor = lines[i + offset];
+      if (neighbor && /^\d{3,6}$/.test(neighbor.trim())) return neighbor.trim();
+    }
+  }
+
+  const fallbackPatterns = [/BELGE\s*NO\s*[:.]?\s*(\S+)/i, /EK[UÜ]\s*NO\s*[:.]?\s*(\S+)/i];
+  for (const re of fallbackPatterns) {
+    for (const line of lines) {
+      const m = line.match(re);
+      if (m) return m[1];
     }
   }
   return null;
