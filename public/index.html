@@ -54,6 +54,12 @@
           </label>
           <label>Fiş No<input type="text" name="fisNo" /></label>
         </div>
+        <label>Kalemler (ürün / miktar / tutar)
+          <textarea name="kalemler" rows="3" placeholder="Her satırda bir kalem"></textarea>
+        </label>
+        <label>KDV Detayı (oran / tutar)
+          <textarea name="kdvDetay" rows="2" placeholder="Örn. %20 KDV: 34,17 TL"></textarea>
+        </label>
         <label>Kategori
           <select name="kategori">
             <option value="">Seçiniz</option>
@@ -90,6 +96,8 @@
               <th>Tarih</th>
               <th>Firma</th>
               <th>Toplam</th>
+              <th>KDV</th>
+              <th>Fiş No</th>
               <th>Kategori</th>
               <th></th>
             </tr>

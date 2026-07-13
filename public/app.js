@@ -29,6 +29,8 @@ function fillForm(fields) {
   receiptForm.kdv.value = fields.kdv ?? '';
   receiptForm.odemeYontemi.value = fields.odemeYontemi || '';
   receiptForm.fisNo.value = fields.fisNo || '';
+  receiptForm.kalemler.value = fields.kalemler || '';
+  receiptForm.kdvDetay.value = fields.kdvDetay || '';
   currentRawText = fields.hamMetin || '';
   rawTextEl.textContent = currentRawText;
   formSection.classList.remove('hidden');
@@ -96,6 +98,12 @@ function formatMoney(n) {
   return Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' TL';
 }
 
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = value ?? '';
+  return div.innerHTML;
+}
+
 async function loadReceipts() {
   const res = await fetch('/api/receipts');
   const rows = await res.json();
@@ -107,10 +115,12 @@ async function loadReceipts() {
     total += Number(r.toplam) || 0;
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${r.tarih || '-'}</td>
-      <td>${r.firma || '-'}</td>
+      <td>${escapeHtml(r.tarih) || '-'}</td>
+      <td>${escapeHtml(r.firma) || '-'}</td>
       <td>${formatMoney(r.toplam)}</td>
-      <td>${r.kategori || '-'}</td>
+      <td>${formatMoney(r.kdv)}</td>
+      <td>${escapeHtml(r.fis_no) || '-'}</td>
+      <td>${escapeHtml(r.kategori) || '-'}</td>
       <td><button class="btn-delete" data-id="${r.id}" title="Sil">🗑</button></td>
     `;
     receiptsBody.appendChild(tr);

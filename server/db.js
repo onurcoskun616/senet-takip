@@ -22,9 +22,23 @@ db.exec(`
     fis_no TEXT,
     kategori TEXT,
     notlar TEXT,
+    kalemler TEXT,
+    kdv_detay TEXT,
     ham_metin TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
   )
 `);
+
+// Var olan (eski semali) bir data/fisler.db dosyasi ile calisiliyorsa
+// eksik kolonlari sonradan ekle.
+const existingColumns = db.prepare("PRAGMA table_info(receipts)").all().map((c) => c.name);
+for (const [column, definition] of [
+  ['kalemler', 'TEXT'],
+  ['kdv_detay', 'TEXT'],
+]) {
+  if (!existingColumns.includes(column)) {
+    db.exec(`ALTER TABLE receipts ADD COLUMN ${column} ${definition}`);
+  }
+}
 
 module.exports = db;

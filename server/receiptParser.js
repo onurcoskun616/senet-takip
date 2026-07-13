@@ -119,6 +119,26 @@ function findFirma(lines) {
   return nameParts.length ? nameParts.join(' ') : null;
 }
 
+function findKalemler(lines) {
+  // Urun satirlari genelde "miktar x/İ birim fiyat" seklinde bir desen
+  // icerir (orn. "2 x 22,75", "20 * 205,00"). Bu satirlari oldugu gibi
+  // toplayip kullaniciya gosteriyoruz; tam urun adi/KDV orani eslestirmesi
+  // fis siralamasi cok bozuk cikan durumlarda guvenilir yapilamiyor, bu
+  // yuzden kullanicinin gozden gecirip duzenlemesi icin ham aday satirlari
+  // birer birer listeliyoruz.
+  const itemRe = /\d+([.,]\d+)?\s*[x×\*]\s*\d+[.,]\d{2}/i;
+  const items = lines.filter((line) => itemRe.test(line)).map((l) => l.trim());
+  return items.length ? items.join('\n') : null;
+}
+
+function findKdvDetay(lines) {
+  // "%20 KDV", "KDV %10", "TOPKDV" gibi KDV oranina/tutarina isaret eden
+  // satirlari topluyor.
+  const kdvRe = /%\s*\d{1,2}\s*KDV|KDV\s*%?\s*\d{1,2}|TOPKDV/i;
+  const items = lines.filter((line) => kdvRe.test(line)).map((l) => l.trim());
+  return items.length ? items.join('\n') : null;
+}
+
 function parseReceiptText(rawText) {
   const lines = rawText
     .split('\n')
@@ -133,6 +153,8 @@ function parseReceiptText(rawText) {
     kdv: findKdv(lines),
     fisNo: findFisNo(lines),
     odemeYontemi: findPaymentMethod(lines),
+    kalemler: findKalemler(lines),
+    kdvDetay: findKdvDetay(lines),
     hamMetin: rawText,
   };
 }

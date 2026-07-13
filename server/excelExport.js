@@ -9,6 +9,8 @@ const COLUMNS = [
   { header: 'KDV Tutarı', key: 'kdv', width: 14 },
   { header: 'Ödeme Yöntemi', key: 'odeme_yontemi', width: 16 },
   { header: 'Fiş No', key: 'fis_no', width: 16 },
+  { header: 'Kalemler', key: 'kalemler', width: 40 },
+  { header: 'KDV Detayı', key: 'kdv_detay', width: 24 },
   { header: 'Kategori', key: 'kategori', width: 16 },
   { header: 'Notlar', key: 'notlar', width: 26 },
   { header: 'Eklenme Tarihi', key: 'created_at', width: 20 },
@@ -37,6 +39,8 @@ async function buildWorkbook(rows) {
   sheet.getColumn('toplam').numFmt = '#,##0.00 "TL"';
   sheet.getColumn('kdv').numFmt = '#,##0.00 "TL"';
   sheet.getColumn('ham_metin').alignment = { wrapText: true, vertical: 'top' };
+  sheet.getColumn('kalemler').alignment = { wrapText: true, vertical: 'top' };
+  sheet.getColumn('kdv_detay').alignment = { wrapText: true, vertical: 'top' };
 
   const lastDataRow = rows.length + 1;
   if (rows.length > 0) {
@@ -56,7 +60,7 @@ async function buildWorkbook(rows) {
     kdvTotalCell.numFmt = '#,##0.00 "TL"';
   }
 
-  sheet.autoFilter = { from: 'A1', to: 'L1' };
+  sheet.autoFilter = { from: 'A1', to: 'N1' };
 
   return workbook;
 }
