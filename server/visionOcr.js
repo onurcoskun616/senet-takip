@@ -2,6 +2,59 @@ const API_KEY = process.env.GOOGLE_VISION_API_KEY;
 const ENDPOINT = 'https://vision.googleapis.com/v1/images:annotate';
 
 /**
+ * Fotografta fisin disinda kalan nesneler (orn. arka plandaki bir urun
+ * ambalaji) da metin icerebiliyor ve Vision bunlari ayri "blok" olarak
+ * tespit ediyor. Bu bloklar fisin kendi metin bloklarindan farkli bir
+ * yatay (x) bolgede yer alir. En cok metin iceren blogu (neredeyse her
+ * zaman fisin kendisi) cekirdek kabul edip, x araligi ona yakin/degen
+ * diger bloklari birlestiriyoruz; geri kalan uzak/kucuk bloklar
+ * (fis disindaki nesneler) sonuca dahil edilmiyor.
+ */
+function filterStrayBlocks(blocks) {
+  const info = blocks
+    .map((block) => {
+      let charCount = 0;
+      for (const p of block.paragraphs || []) {
+        for (const w of p.words || []) charCount += (w.symbols || []).length;
+      }
+      const vertices = block.boundingBox?.vertices || [];
+      const xs = vertices.map((v) => v.x || 0);
+      return {
+        block,
+        charCount,
+        minX: xs.length ? Math.min(...xs) : 0,
+        maxX: xs.length ? Math.max(...xs) : 0,
+      };
+    })
+    .filter((item) => item.charCount > 0);
+
+  if (info.length < 2) return blocks;
+
+  info.sort((a, b) => b.charCount - a.charCount);
+
+  const TOLERANCE = 60;
+  let minX = info[0].minX;
+  let maxX = info[0].maxX;
+  const included = new Set([info[0]]);
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const item of info) {
+      if (included.has(item)) continue;
+      if (item.maxX >= minX - TOLERANCE && item.minX <= maxX + TOLERANCE) {
+        included.add(item);
+        minX = Math.min(minX, item.minX);
+        maxX = Math.max(maxX, item.maxX);
+        changed = true;
+      }
+    }
+  }
+
+  return info.filter((item) => included.has(item)).map((item) => item.block);
+}
+
+/**
  * Vision bazen fisin blok/paragraf sirasini gorsel (yukaridan asagiya)
  * siraya gore degil, kendi ic tespit sirasina gore dondurur - bu da
  * firma adi / adres gibi bilgilerin fis uzerindeki gercek sirasindan
@@ -11,8 +64,9 @@ const ENDPOINT = 'https://vision.googleapis.com/v1/images:annotate';
  */
 function reconstructReadingOrder(page) {
   const paragraphs = [];
+  const blocks = filterStrayBlocks(page.blocks || []);
 
-  for (const block of page.blocks || []) {
+  for (const block of blocks) {
     for (const paragraph of block.paragraphs || []) {
       let text = '';
       for (const word of paragraph.words || []) {
