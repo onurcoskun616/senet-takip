@@ -25,6 +25,7 @@ const COLUMNS = [
   { header: 'KDV %20', key: 'kdv_20', width: 12 },
   { header: 'Kategori', key: 'kategori', width: 16 },
   { header: 'Notlar', key: 'notlar', width: 26 },
+  { header: 'Fiş Fotoğrafı', key: 'foto_dosya', width: 20 },
   { header: 'Eklenme Tarihi', key: 'created_at', width: 20 },
   { header: 'Okunan Ham Metin', key: 'ham_metin', width: 60 },
 ];
@@ -35,7 +36,7 @@ const KDV_RATE_NUMERIC_KEYS = [
   'kdv_1', 'kdv_10', 'kdv_20',
 ];
 
-async function buildWorkbook(rows) {
+async function buildWorkbook(rows, baseUrl) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Fiş Tarama Sistemi';
   workbook.created = new Date();
@@ -51,7 +52,13 @@ async function buildWorkbook(rows) {
   headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
 
   for (const row of rows) {
-    sheet.addRow(row);
+    const addedRow = sheet.addRow(row);
+    // Fotograf varsa, dosya adi yerine tiklanabilir bir baglanti goster.
+    if (row.foto_dosya && baseUrl) {
+      const cell = addedRow.getCell('foto_dosya');
+      cell.value = { text: 'Fotoğrafı Görüntüle', hyperlink: `${baseUrl}/api/receipts/photos/${row.foto_dosya}` };
+      cell.font = { color: { argb: 'FF2F5233' }, underline: true };
+    }
   }
 
   sheet.getColumn('toplam').numFmt = '#,##0.00 "TL"';

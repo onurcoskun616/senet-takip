@@ -40,6 +40,7 @@ db.exec(`
     matrah_20 REAL,
     kdv_20 REAL,
     ham_metin TEXT,
+    foto_dosya TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
   )
 `);
@@ -60,6 +61,7 @@ for (const [column, definition] of [
   ['toplam_20', 'REAL'],
   ['matrah_20', 'REAL'],
   ['kdv_20', 'REAL'],
+  ['foto_dosya', 'TEXT'],
 ]) {
   if (!existingColumns.includes(column)) {
     db.exec(`ALTER TABLE receipts ADD COLUMN ${column} ${definition}`);

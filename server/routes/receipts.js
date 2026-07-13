@@ -1,3 +1,6 @@
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 const express = require('express');
 const multer = require('multer');
 const db = require('../db');
@@ -8,6 +11,34 @@ const { buildWorkbook } = require('../excelExport');
 const router = express.Router();
 
 const KDV_RATE_FIELDS = ['1', '10', '20'];
+
+// Taranan fiş fotoğrafları burada saklanır (DATA_DIR altında, veritabanıyla
+// aynı kalıcı disk üzerinde olacak şekilde).
+const photosDir = path.join(db.dataDir, 'photos');
+if (!fs.existsSync(photosDir)) {
+  fs.mkdirSync(photosDir, { recursive: true });
+}
+
+const MIME_EXTENSIONS = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'image/heic': '.heic',
+  'image/heif': '.heif',
+};
+
+function savePhoto(buffer, mimetype) {
+  const ext = MIME_EXTENSIONS[mimetype] || '.jpg';
+  const filename = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${ext}`;
+  fs.writeFileSync(path.join(photosDir, filename), buffer);
+  return filename;
+}
+
+function deletePhoto(filename) {
+  if (!filename) return;
+  const filePath = path.join(photosDir, path.basename(filename));
+  fs.unlink(filePath, () => {});
+}
 
 // Guncel KDV oranlarina (%1/%10/%20) gore Toplam/Matrah/KDV kirilimi
 // alanlarini istek govdesinden (kamelCase) veritabani sutunlarina
@@ -38,6 +69,9 @@ const upload = multer({
 });
 
 // Fiş fotoğrafını OCR'dan geçirip alanları çıkarır (henüz kaydetmez).
+// Fotoğrafın kendisi de diske kaydedilir; kullanıcı fişi kaydettiğinde
+// (POST /) bu dosya adı veritabanına yazılır, böylece sonradan tekrar
+// bakılabilir.
 router.post('/scan', upload.single('fis'), async (req, res) => {
   try {
     if (!req.file) {
@@ -48,26 +82,37 @@ router.post('/scan', upload.single('fis'), async (req, res) => {
       return res.status(422).json({ error: 'Fotoğrafta okunabilir bir metin bulunamadı. Daha net bir fotoğraf deneyin.' });
     }
     const fields = parseReceiptText(rawText, paragraphs);
-    res.json({ fields });
+    const fotoDosya = savePhoto(req.file.buffer, req.file.mimetype);
+    res.json({ fields: { ...fields, fotoDosya } });
   } catch (err) {
     console.error('OCR hatası:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
+// Bir fiş fotoğrafını görüntüler (Excel'deki bağlantı ve listedeki
+// önizleme için kullanılır).
+router.get('/photos/:filename', (req, res) => {
+  const filePath = path.join(photosDir, path.basename(req.params.filename));
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Fotoğraf bulunamadı.' });
+  }
+  res.sendFile(filePath);
+});
+
 // Kullanıcının onayladığı/düzelttiği fiş bilgilerini kaydeder.
 router.post('/', (req, res) => {
-  const { tarih, saat, firma, toplam, kdv, odemeYontemi, fisNo, belgeTuru, kategori, notlar, kalemler, kdvDetay, hamMetin } = req.body;
+  const { tarih, saat, firma, toplam, kdv, odemeYontemi, fisNo, belgeTuru, kategori, notlar, kalemler, kdvDetay, hamMetin, fotoDosya } = req.body;
   const kdvRateFields = extractKdvRateFields(req.body);
 
   const stmt = db.prepare(`
     INSERT INTO receipts (
       tarih, saat, firma, toplam, kdv, odeme_yontemi, fis_no, belge_turu, kategori, notlar, kalemler, kdv_detay,
-      toplam_1, matrah_1, kdv_1, toplam_10, matrah_10, kdv_10, toplam_20, matrah_20, kdv_20, ham_metin
+      toplam_1, matrah_1, kdv_1, toplam_10, matrah_10, kdv_10, toplam_20, matrah_20, kdv_20, ham_metin, foto_dosya
     )
     VALUES (
       @tarih, @saat, @firma, @toplam, @kdv, @odeme_yontemi, @fis_no, @belge_turu, @kategori, @notlar, @kalemler, @kdv_detay,
-      @toplam_1, @matrah_1, @kdv_1, @toplam_10, @matrah_10, @kdv_10, @toplam_20, @matrah_20, @kdv_20, @ham_metin
+      @toplam_1, @matrah_1, @kdv_1, @toplam_10, @matrah_10, @kdv_10, @toplam_20, @matrah_20, @kdv_20, @ham_metin, @foto_dosya
     )
   `);
 
@@ -86,6 +131,7 @@ router.post('/', (req, res) => {
     kdv_detay: kdvDetay || null,
     ...kdvRateFields,
     ham_metin: hamMetin || null,
+    foto_dosya: fotoDosya || null,
   });
 
   const created = db.prepare('SELECT * FROM receipts WHERE id = ?').get(info.lastInsertRowid);
@@ -100,7 +146,7 @@ router.get('/', (req, res) => {
 
 // Tek bir fişi günceller (OCR hatalarını manuel düzeltmek için).
 router.put('/:id', (req, res) => {
-  const { tarih, saat, firma, toplam, kdv, odemeYontemi, fisNo, belgeTuru, kategori, notlar, kalemler, kdvDetay } = req.body;
+  const { tarih, saat, firma, toplam, kdv, odemeYontemi, fisNo, belgeTuru, kategori, notlar, kalemler, kdvDetay, fotoDosya } = req.body;
   const kdvRateFields = extractKdvRateFields(req.body);
 
   const existing = db.prepare('SELECT * FROM receipts WHERE id = ?').get(req.params.id);
@@ -114,7 +160,8 @@ router.put('/:id', (req, res) => {
       kalemler = @kalemler, kdv_detay = @kdv_detay,
       toplam_1 = @toplam_1, matrah_1 = @matrah_1, kdv_1 = @kdv_1,
       toplam_10 = @toplam_10, matrah_10 = @matrah_10, kdv_10 = @kdv_10,
-      toplam_20 = @toplam_20, matrah_20 = @matrah_20, kdv_20 = @kdv_20
+      toplam_20 = @toplam_20, matrah_20 = @matrah_20, kdv_20 = @kdv_20,
+      foto_dosya = @foto_dosya
     WHERE id = @id
   `).run({
     id: req.params.id,
@@ -131,6 +178,8 @@ router.put('/:id', (req, res) => {
     kalemler: kalemler || null,
     kdv_detay: kdvDetay || null,
     ...kdvRateFields,
+    // Duzenleme sirasinda fotograf yeniden taranmadiysa mevcut dosyayi koru.
+    foto_dosya: fotoDosya !== undefined ? fotoDosya || null : existing.foto_dosya,
   });
 
   const updated = db.prepare('SELECT * FROM receipts WHERE id = ?').get(req.params.id);
@@ -139,8 +188,10 @@ router.put('/:id', (req, res) => {
 
 // Bir fişi siler.
 router.delete('/:id', (req, res) => {
+  const existing = db.prepare('SELECT foto_dosya FROM receipts WHERE id = ?').get(req.params.id);
   const info = db.prepare('DELETE FROM receipts WHERE id = ?').run(req.params.id);
   if (info.changes === 0) return res.status(404).json({ error: 'Fiş bulunamadı.' });
+  deletePhoto(existing?.foto_dosya);
   res.status(204).end();
 });
 
@@ -148,7 +199,8 @@ router.delete('/:id', (req, res) => {
 router.get('/export/excel', async (req, res) => {
   try {
     const rows = db.prepare('SELECT * FROM receipts ORDER BY tarih ASC, id ASC').all();
-    const workbook = await buildWorkbook(rows);
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const workbook = await buildWorkbook(rows, baseUrl);
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="fisler_${new Date().toISOString().slice(0, 10)}.xlsx"`);
