@@ -38,8 +38,18 @@ function findTime(lines) {
 
 const AMOUNT_RE = /(\d{1,3}(?:\.\d{3})*(?:,\d{2})|\d+[.,]\d{2})\s*(?:TL|₺)?\s*$/i;
 // Bir satirin tamamen (baslik/etiket olmadan) bir tutardan ibaret olup
-// olmadigini kontrol eder - orn. "* 205,00", "#59,90".
-const BARE_AMOUNT_RE = /^[*#$₺\s]*(\d{1,3}(?:\.\d{3})*(?:,\d{2})|\d+[.,]\d{2})\s*(?:TL|₺)?[*#\s]*$/i;
+// olmadigini kontrol eder - orn. "* 205,00", "#59,90", "+930,00".
+const BARE_AMOUNT_RE = /^[*#$₺+\s]*(\d{1,3}(?:\.\d{3})*(?:,\d{2})|\d+[.,]\d{2})\s*(?:TL|₺)?[*#+\s]*$/i;
+
+// Etiketten en yakin (once daha kisa mesafeli, sonra ileri/geri sirayla)
+// satirlara bakmak icin kullanilan ofset sirasi: +1,-1,+2,-2,...
+function nearOffsets(maxDistance) {
+  const offsets = [];
+  for (let d = 1; d <= maxDistance; d++) {
+    offsets.push(d, -d);
+  }
+  return offsets;
+}
 
 function findAmountOnLine(line) {
   const m = line.match(AMOUNT_RE);
@@ -89,7 +99,7 @@ function findTotalAndKdv(lines) {
 
   for (const label of pendingLabels) {
     if ((label.type === 'toplam' && toplam !== null) || (label.type === 'kdv' && kdv !== null)) continue;
-    for (let offset = 1; offset <= 6; offset++) {
+    for (const offset of nearOffsets(6)) {
       const idx = label.index + offset;
       if (consumed.has(idx) || !lines[idx]) continue;
       const m = lines[idx].match(BARE_AMOUNT_RE);
