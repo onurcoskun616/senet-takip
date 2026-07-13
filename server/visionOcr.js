@@ -46,12 +46,15 @@ function reconstructReadingOrder(page) {
     return a.leftX - b.leftX;
   });
 
-  return paragraphs.map((p) => p.text).filter(Boolean).join('\n');
+  const nonEmpty = paragraphs.filter((p) => p.text);
+  return { text: nonEmpty.map((p) => p.text).join('\n'), paragraphs: nonEmpty };
 }
 
 /**
- * Verilen resim buffer'ini Google Cloud Vision API'ye gonderip
- * icindeki tum metni (fis uzerindeki yazilar) dondurur.
+ * Verilen resim buffer'ini Google Cloud Vision API'ye gonderip icindeki
+ * tum metni ve (varsa) her paragrafin fis uzerindeki konumunu dondurur.
+ * Konum bilgisi, "TOPLAM"/"KDV" gibi etiketlere metin sirasindan degil
+ * gercek gorsel yakinliktan en dogru tutari eslestirmek icin kullanilir.
  */
 async function extractText(imageBuffer) {
   if (!API_KEY) {
@@ -92,10 +95,10 @@ async function extractText(imageBuffer) {
   const page = result?.fullTextAnnotation?.pages?.[0];
   if (page) {
     const reordered = reconstructReadingOrder(page);
-    if (reordered) return reordered;
+    if (reordered.text) return reordered;
   }
 
-  return result?.fullTextAnnotation?.text || '';
+  return { text: result?.fullTextAnnotation?.text || '', paragraphs: [] };
 }
 
 module.exports = { extractText };

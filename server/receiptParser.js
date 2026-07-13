@@ -29,9 +29,22 @@ function findDate(lines) {
 }
 
 function findTime(lines) {
+  // OCR bazen "SAAT : 13 : 08" gibi ayraclarin etrafina bosluk koyabiliyor.
+  const timeRe = /\b(\d{2})\s*:\s*(\d{2})\s*(?::\s*(\d{2}))?\b/;
+  const format = (m) => `${m[1]}:${m[2]}:${m[3] || '00'}`;
+
+  // Once "SAAT" etiketini tasiyan satiri tercih et; boylece fis uzerinde
+  // baska bir yerde (orn. POS yazdirma zaman damgasi) gecen alakasiz bir
+  // saat yanlislikla secilmesin.
   for (const line of lines) {
-    const m = line.match(/\b(\d{2}):(\d{2})(:\d{2})?\b/);
-    if (m) return m[3] ? `${m[1]}:${m[2]}${m[3]}` : `${m[1]}:${m[2]}:00`;
+    if (/SAAT/i.test(line)) {
+      const m = line.match(timeRe);
+      if (m) return format(m);
+    }
+  }
+  for (const line of lines) {
+    const m = line.match(timeRe);
+    if (m) return format(m);
   }
   return null;
 }
@@ -109,6 +122,69 @@ function findTotalAndKdv(lines) {
         consumed.add(idx);
         break;
       }
+    }
+  }
+
+  return { toplam, kdv };
+}
+
+function parseBareAmount(text) {
+  const m = text.trim().match(BARE_AMOUNT_RE);
+  return m ? parseAmount(m[1]) : null;
+}
+
+/**
+ * TOPLAM/KDV tutarlarini, paragraflarin fis uzerindeki gercek 2 boyutlu
+ * konumuna (metin sirasina degil) bakarak bulur. Cok kalemli fişlerde
+ * metin-sirasi tabanli tahmin, etikete metinde yakin ama fis uzerinde
+ * alakasiz bir urun fiyatini yanlislikla secebiliyordu; gercek piksel
+ * konumuna gore en yakin tutari secmek bu riski azaltir.
+ */
+function findTotalAndKdvSpatial(paragraphs) {
+  let toplam = null;
+  let kdv = null;
+  const consumed = new Set();
+
+  const labelParagraphs = [];
+  for (const p of paragraphs) {
+    const upper = p.text.toLocaleUpperCase('tr');
+    if (GENEL_TOPLAM_RE.test(upper)) labelParagraphs.push({ p, type: 'toplam', priority: 0 });
+    else if (TOPLAM_RE.test(upper) && !ARA_TOPLAM_RE.test(upper)) labelParagraphs.push({ p, type: 'toplam', priority: 1 });
+    if (KDV_RE.test(upper)) labelParagraphs.push({ p, type: 'kdv', priority: 1 });
+  }
+  labelParagraphs.sort((a, b) => a.priority - b.priority);
+
+  for (const label of labelParagraphs) {
+    if ((label.type === 'toplam' && toplam !== null) || (label.type === 'kdv' && kdv !== null)) continue;
+
+    const inline = findAmountOnLine(label.p.text);
+    if (inline !== null && !consumed.has(label.p)) {
+      if (label.type === 'toplam') toplam = inline; else kdv = inline;
+      consumed.add(label.p);
+      continue;
+    }
+
+    // Ayni paragrafta tutar yoksa en yakin "ciplak tutar" paragrafini ara:
+    // once ayni satirdakileri (topY yakin) soldan-saga mesafeye gore,
+    // yoksa dikey olarak en yakin satiri tercih ediyoruz.
+    let best = null;
+    let bestScore = Infinity;
+    for (const cand of paragraphs) {
+      if (cand === label.p || consumed.has(cand)) continue;
+      const amt = parseBareAmount(cand.text);
+      if (amt === null) continue;
+      const dy = Math.abs(cand.topY - label.p.topY);
+      const dx = cand.leftX - label.p.leftX;
+      const sameRow = dy < 20;
+      const score = sameRow ? Math.abs(dx) : 100000 + dy * 10 + Math.abs(dx);
+      if (score < bestScore) {
+        bestScore = score;
+        best = { cand, amt };
+      }
+    }
+    if (best) {
+      if (label.type === 'toplam') toplam = best.amt; else kdv = best.amt;
+      consumed.add(best.cand);
     }
   }
 
@@ -198,13 +274,25 @@ function findKdvDetay(lines) {
   return items.length ? items.join('\n') : null;
 }
 
-function parseReceiptText(rawText) {
+function parseReceiptText(rawText, paragraphs) {
   const lines = rawText
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean);
 
-  const { toplam, kdv } = findTotalAndKdv(lines);
+  // Konum (bounding box) verisi varsa once onu dene - gorsel olarak dogru
+  // sonuc verir. Eksik kalan alan olursa metin-sirasi tabanli yontemle
+  // tamamlamaya calis.
+  let toplam = null;
+  let kdv = null;
+  if (paragraphs && paragraphs.length) {
+    ({ toplam, kdv } = findTotalAndKdvSpatial(paragraphs));
+  }
+  if (toplam === null || kdv === null) {
+    const fallback = findTotalAndKdv(lines);
+    if (toplam === null) toplam = fallback.toplam;
+    if (kdv === null) kdv = fallback.kdv;
+  }
 
   return {
     tarih: findDate(lines),

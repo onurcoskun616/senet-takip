@@ -24,11 +24,11 @@ router.post('/scan', upload.single('fis'), async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: 'Fiş fotoğrafı yüklenmedi.' });
     }
-    const rawText = await extractText(req.file.buffer);
+    const { text: rawText, paragraphs } = await extractText(req.file.buffer);
     if (!rawText) {
       return res.status(422).json({ error: 'Fotoğrafta okunabilir bir metin bulunamadı. Daha net bir fotoğraf deneyin.' });
     }
-    const fields = parseReceiptText(rawText);
+    const fields = parseReceiptText(rawText, paragraphs);
     res.json({ fields });
   } catch (err) {
     console.error('OCR hatası:', err.message);
