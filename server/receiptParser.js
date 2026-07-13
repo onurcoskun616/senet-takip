@@ -71,7 +71,9 @@ function findAmountOnLine(line) {
 
 const ARA_TOPLAM_RE = /ARA\s*TOPLAM/i;
 const GENEL_TOPLAM_RE = /GENEL\s*TOPLAM|TOPLAM\s*TUTAR|ÖDENEN|ODENEN/i;
-const TOPLAM_RE = /TOPLAM/i;
+// Bazi fişlerde "TOPLAM" kisaltilarak sadece "TOP" yazilabiliyor. \b sinirlari
+// sayesinde bu, "ARATOPLAM" veya "TOPKDV" gibi kelimelerin icini yakalamiyor.
+const TOPLAM_RE = /\bTOPLAM\b|\bTOP\b/i;
 const KDV_RE = /TOPKDV|KDV/i;
 
 /**
