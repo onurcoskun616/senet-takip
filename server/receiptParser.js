@@ -9,6 +9,8 @@
 function parseAmount(raw) {
   if (!raw) return null;
   // "1.234,56" -> 1234.56  |  "125,50" -> 125.50  |  "125.50" -> 125.50
+  // "-164,99" -> -164.99 (indirim satirlari icin isaret korunur)
+  const isNegative = /^\s*-/.test(raw);
   let s = raw.trim().replace(/[^\d.,]/g, '');
   if (s.includes(',') && s.includes('.')) {
     s = s.replace(/\./g, '').replace(',', '.');
@@ -16,7 +18,8 @@ function parseAmount(raw) {
     s = s.replace(',', '.');
   }
   const n = parseFloat(s);
-  return Number.isFinite(n) ? n : null;
+  if (!Number.isFinite(n)) return null;
+  return isNegative ? -n : n;
 }
 
 function findDate(lines) {
@@ -52,7 +55,7 @@ function findTime(lines) {
 const AMOUNT_RE = /(\d{1,3}(?:\.\d{3})*(?:,\d{2})|\d+[.,]\d{2})\s*(?:TL|₺)?\s*$/i;
 // Bir satirin tamamen (baslik/etiket olmadan) bir tutardan ibaret olup
 // olmadigini kontrol eder - orn. "* 205,00", "#59,90", "+930,00".
-const BARE_AMOUNT_RE = /^[*#$₺+\s]*(\d{1,3}(?:\.\d{3})*(?:,\d{2})|\d+[.,]\d{2})\s*(?:TL|₺)?[*#+\s]*$/i;
+const BARE_AMOUNT_RE = /^[*#$₺+\s]*(-?(?:\d{1,3}(?:\.\d{3})*(?:,\d{2})|\d+[.,]\d{2}))\s*(?:TL|₺)?[*#+\s]*$/i;
 
 // Etiketten en yakin (once daha kisa mesafeli, sonra ileri/geri sirayla)
 // satirlara bakmak icin kullanilan ofset sirasi: +1,-1,+2,-2,...
@@ -510,6 +513,54 @@ function findKdvBreakdown(lines) {
   return result;
 }
 
+// Urun satirlarinda KDV orani ya kendi satirinda tek basina gelir (orn.
+// "DANA TRANC YORESEL" \n "% 1" \n "* 1.099,95") ya da urun adiyla ayni
+// satirin SONUNDA yer alir (orn. "MIGROS PLASTIK POSET % 20"). Iki
+// durumu da yakalamak icin satir sonunda "%NN" araniyor.
+const BARE_RATE_RE = /%\s*(\d{1,2})\.?\s*$/;
+
+/**
+ * Fişte ayrı bir KDV kırılım tablosu YOKSA (sadece tek bir TOPKDV varsa),
+ * her ürün satırının yanındaki kendi KDV oranını (% 1, % 20 vb.) ve o
+ * satırın tutarını kullanarak oran bazında toplam (dahil) tutarları
+ * hesaplar. İndirim satırları da kendi oranıyla (genelde eksi işaretli)
+ * dahil edilir. Bu, kullanıcının fişteki KDV toplamıyla (TOPKDV) örtüşen
+ * bir kırılım üretir.
+ */
+function findItemLevelKdvSums(lines) {
+  const sums = {};
+  for (let i = 0; i < lines.length; i++) {
+    const bareMatch = lines[i].match(BARE_RATE_RE);
+    const rate = bareMatch && KDV_RATES.includes(bareMatch[1]) ? bareMatch[1] : null;
+    if (!rate) continue;
+
+    let amount = null;
+    for (const offset of nearOffsets(2)) {
+      const neighbor = lines[i + offset];
+      if (!neighbor || BARE_RATE_RE.test(neighbor)) continue;
+      const m = neighbor.trim().match(BARE_AMOUNT_RE);
+      if (m) {
+        amount = parseAmount(m[1]);
+        break;
+      }
+    }
+    if (amount === null) continue;
+    sums[rate] = (sums[rate] || 0) + amount;
+  }
+  return sums;
+}
+
+// dahil tutardan (KDV dahil), orani kullanarak matrah ve KDV tutarini turetir.
+function deriveFromDahil(rate, dahil) {
+  const matrah = dahil / (1 + rate / 100);
+  const kdv = dahil - matrah;
+  return {
+    dahil: Math.round(dahil * 100) / 100,
+    matrah: Math.round(matrah * 100) / 100,
+    kdv: Math.round(kdv * 100) / 100,
+  };
+}
+
 function parseReceiptText(rawText, paragraphs) {
   const lines = rawText
     .split('\n')
@@ -531,7 +582,18 @@ function parseReceiptText(rawText, paragraphs) {
   }
 
   const belgeTuru = findBelgeTuru(lines);
-  const kdvKirilim = findKdvBreakdown(lines);
+  let kdvKirilim = findKdvBreakdown(lines);
+
+  // Fişte ayrı bir KDV kırılım tablosu yoksa, ürün satırlarındaki kendi
+  // KDV oranlarını kullanarak oran bazında hesapla.
+  if (Object.keys(kdvKirilim).length === 0) {
+    const itemSums = findItemLevelKdvSums(lines);
+    const derived = {};
+    for (const [rate, dahil] of Object.entries(itemSums)) {
+      derived[rate] = deriveFromDahil(Number(rate), dahil);
+    }
+    if (Object.keys(derived).length > 0) kdvKirilim = derived;
+  }
 
   return {
     belgeTuru,
