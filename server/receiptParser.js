@@ -243,17 +243,19 @@ function findTotalAndKdvSpatial(paragraphs) {
 // tire/bosluk etrafinda fazladan bosluklarla okuyabiliyor.
 const E_ARSIV_FATURA_RE = /E[-\s]*ARŞİV\s*FATURA|E[-\s]*ARSIV\s*FATURA/i;
 const E_FATURA_RE = /\bE[-\s]*FATURA\b/i;
+const GIDER_PUSULASI_RE = /G[İI]DER\s*PUSULASI/i;
 
 /**
- * Fiş (yazar kasa fişi) ile e-Arşiv Fatura / e-Fatura hukuken ve
- * bicimsel olarak farkli belgelerdir. Metinde bu ifadelerden biri
- * geciyorsa belge turunu buna gore isaretliyoruz; bu, "Fiş No" yerine
- * "Fatura No" kullanilmasi gerektigini belirlemek icin kullanilir.
+ * Fiş (yazar kasa fişi) ile e-Arşiv Fatura / e-Fatura / Gider Pusulası
+ * hukuken ve bicimsel olarak farkli belgelerdir. Metinde bu ifadelerden
+ * biri geciyorsa belge turunu buna gore isaretliyoruz; bu, "Fiş No"
+ * yerine "Fatura No" kullanilmasi gerektigini belirlemek icin kullanilir.
  */
 function findBelgeTuru(lines) {
   const text = lines.join(' ');
   if (E_ARSIV_FATURA_RE.test(text)) return 'E-Arşiv Fatura';
   if (E_FATURA_RE.test(text)) return 'E-Fatura';
+  if (GIDER_PUSULASI_RE.test(text)) return 'Gider Pusulası';
   return 'Fiş';
 }
 
@@ -317,34 +319,43 @@ function findPaymentMethod(lines) {
   return null;
 }
 
-// Fis basindaki firma adi satirlari neredeyse her zaman BUYUK HARFLE
-// basilidir. "E-Arşiv Fatura" gibi belge turu basliklari ya da bir
-// imza/logo alaninin yanlis OCR'lanmasindan dogan rastgele kelimeler
-// genelde karisik/kucuk harfli cikar - bu satirlari firma adindan
-// eleyerek gercek (buyuk harfli) sirket adina ulasmaya calisiyoruz.
-function isMostlyUppercase(text) {
-  const upperCount = (text.match(/[A-ZÇĞİÖŞÜ]/g) || []).length;
-  const lowerCount = (text.match(/[a-zçğıöşü]/g) || []).length;
-  const total = upperCount + lowerCount;
-  if (total === 0) return true;
-  return upperCount / total >= 0.7;
-}
-
-// Firma adindan once cikabilen, sirket ismi olmayan belge turu basliklari.
-const DOCUMENT_HEADER_RE = /E[-\s]?ARŞİV|E[-\s]?ARSIV|FATURA|BİLGİ\s*FİŞİ|BILGI\s*FISI/i;
+// Firma adindan once cikabilen, sirket ismi olmayan belge turu/kopya
+// basliklari (orn. "E-Arşiv Fatura", "** İKİNCİ KOPYA **", "Gider Pusulası").
+const DOCUMENT_HEADER_RE =
+  /E[-\s]?ARŞİV|E[-\s]?ARSIV|FATURA|BİLGİ\s*FİŞİ|BILGI\s*FISI|İKİNCİ\s*KOPYA|IKINCI\s*KOPYA|N[UÜ]SHA|GİDER\s*PUSULASI|GIDER\s*PUSULASI|İRSALİYE|IRSALIYE/i;
 // "Teşekkürler", "Hoş geldiniz" gibi karsilama/vedalasma ifadeleri firma
 // adindan hemen once ya da sonra basilabiliyor; bunlar firma adinin
 // parcasi degildir.
 const GREETING_RE = /TE[ŞS]EKK[UÜ]RLER|TEŞEKKÜR\s*EDERİZ|TESEKKUR\s*EDERIZ|HOŞ\s*GELDİNİZ|HOS\s*GELDINIZ/i;
 
+// Gercek firma adlari (orn. "LC Waikiki Mağazacılık Hiz. Tic. A.Ş.") bazen
+// karisik/kucuk harfle basiliyor, bu yuzden buyuk harf orani tek basina
+// guvenilir bir gurultu belirteci degil. Ama bir imza/logo kalintisi ya da
+// slogan ("Beli Carly", "Oyuncakçınız" gibi) genelde HEM kucuk harf
+// agirlikli HEM cok kisa (1-2 kelime) olur; gercek firma adlari ise
+// kucuk harfle basilsa bile birden fazla kelimeden olusur. Bu yuzden
+// sadece "kucuk harf agirlikli VE cok kisa" olan satirlari eliyoruz.
+function looksLikeNoise(text) {
+  const upperCount = (text.match(/[A-ZÇĞİÖŞÜ]/g) || []).length;
+  const lowerCount = (text.match(/[a-zçğıöşü]/g) || []).length;
+  const total = upperCount + lowerCount;
+  const mostlyLower = total > 0 && upperCount / total < 0.7;
+  const wordCount = (text.match(/[A-Za-zÇĞİÖŞÜçğıöşü]+/g) || []).length;
+  return mostlyLower && wordCount < 3;
+}
+
 function findFirma(lines) {
   // Fis basindaki ilk anlamli satir(lar) genelde magaza/firma adidir; isim
   // birden fazla satira yayilmis olabilir (orn. "FUNIDO" / "BİLİŞİM" /
-  // "TEKNOLOJİLERİ A.Ş."). Adres/vergi/tarih bilgisine varana kadar
-  // birbirini izleyen bu satirlari tek bir firma adinda birlestiriyoruz.
+  // "TEKNOLOJİLERİ A.Ş." ya da "LC Waikiki Mağazacılık Hiz. Tic. A.Ş." gibi
+  // karisik harfle basilmis olabilir - bu yuzden buyuk/kucuk harf kontrolu
+  // yapmiyoruz). Adres/vergi/tarih bilgisine varana kadar birbirini izleyen
+  // bu satirlari tek bir firma adinda birlestiriyoruz.
   // VKN/VD (vergi dairesi) "V.D", "VD", "V.D." gibi farkli yazilabiliyor;
-  // \.? ile nokta olsun olmasin yakalaniyor.
-  const stopRe = /(VKN|\bV\.?D\.?\b|VERG[İI]|ADRES|TEL\s*[:.]|CAD\.|SOK\.|MAH\.|BLV|NO\s*[:.]?\s*\d|\d{2}[.\/-]\d{2}[.\/-]\d{4}|\/[A-ZÇĞİÖŞÜ]+$)/i;
+  // adres kisaltmalari da nokta olsun olmasin ("Mah."/"Mh.", "Cad."/"Cd.",
+  // "Sok."/"Sk.") kisa yazilabiliyor.
+  const stopRe =
+    /(VKN|\bV\.?D\.?\b|VERG[İI]|ADRES|TEL\s*[:.]|\b(MAH|MH|CAD|CD|SOK|SK|BULV|BLV)\.?\b|NO\s*[:.]?\s*\d|\d{2}[.\/-]\d{2}[.\/-]\d{4}|\/[A-ZÇĞİÖŞÜ]+$)/i;
   const nameParts = [];
   for (const line of lines.slice(0, 8)) {
     const trimmed = line.trim();
@@ -352,13 +363,11 @@ function findFirma(lines) {
     // okunmasindan gelir (orn. yuvarlak bir mühür ikonu "G" gibi
     // okunabiliyor) - gercek bir firma adi bundan cok daha uzundur.
     if (!trimmed || trimmed.length < 3 || /^\d+$/.test(trimmed)) continue;
-    // Adres/vergi/tarih iceren bir satirsa - buyuk harfli olsun olmasin -
-    // isim burada biter, arama durur. Bu kontrol, kucuk harfli "gurultu"
-    // filtresinden ONCE yapiliyor; aksi halde kucuk/karisik harfle basilmis
-    // bir adres satiri (orn. "Cevizli Mah. Tugay Yolu Cd.") sessizce
-    // atlanip arama yanlislikla vergi dairesi satirina kadar devam ediyordu.
+    // Adres/vergi/tarih iceren bir satirsa isim burada biter, arama durur.
     if (stopRe.test(trimmed)) break;
-    if (DOCUMENT_HEADER_RE.test(trimmed) || GREETING_RE.test(trimmed) || !isMostlyUppercase(trimmed)) continue;
+    // Belge basligi ("E-Arşiv Fatura", "İkinci Kopya" vb.) veya karsilama
+    // ifadesi ("Teşekkürler" vb.) ise firma adinin parcasi degildir, atla.
+    if (DOCUMENT_HEADER_RE.test(trimmed) || GREETING_RE.test(trimmed) || looksLikeNoise(trimmed)) continue;
     nameParts.push(trimmed);
     if (nameParts.length >= 3) break;
   }
