@@ -103,16 +103,20 @@ function findPaymentMethod(lines) {
 }
 
 function findFirma(lines) {
-  // Fis basindaki ilk anlamli satir(lar) genelde magaza/firma adidir.
-  // Vergi no, adres, tarih gibi satirlari atla.
-  const skipRe = /(VKN|VD\s*[:.]|VERG[İI]|ADRES|TEL\s*[:.]|\d{2}[.\/-]\d{2}[.\/-]\d{4})/i;
+  // Fis basindaki ilk anlamli satir(lar) genelde magaza/firma adidir; isim
+  // birden fazla satira yayilmis olabilir (orn. "FUNIDO" / "BİLİŞİM" /
+  // "TEKNOLOJİLERİ A.Ş."). Adres/vergi/tarih bilgisine varana kadar
+  // birbirini izleyen bu satirlari tek bir firma adinda birlestiriyoruz.
+  const stopRe = /(VKN|VD\s*[:.]|VERG[İI]|ADRES|TEL\s*[:.]|CAD\.|SOK\.|MAH\.|BLV|NO\s*[:.]?\s*\d|\d{2}[.\/-]\d{2}[.\/-]\d{4}|\/[A-ZÇĞİÖŞÜ]+$)/i;
+  const nameParts = [];
   for (const line of lines.slice(0, 6)) {
     const trimmed = line.trim();
-    if (trimmed.length >= 3 && !skipRe.test(trimmed) && !/^\d+$/.test(trimmed)) {
-      return trimmed;
-    }
+    if (!trimmed || /^\d+$/.test(trimmed)) continue;
+    if (stopRe.test(trimmed)) break;
+    nameParts.push(trimmed);
+    if (nameParts.length >= 3) break;
   }
-  return null;
+  return nameParts.length ? nameParts.join(' ') : null;
 }
 
 function parseReceiptText(rawText) {
