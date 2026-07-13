@@ -52,8 +52,15 @@
               <option>Diğer</option>
             </select>
           </label>
-          <label>Fiş No<input type="text" name="fisNo" /></label>
+          <label>Belge Türü
+            <select name="belgeTuru" id="belgeTuruSelect">
+              <option>Fiş</option>
+              <option>E-Arşiv Fatura</option>
+              <option>E-Fatura</option>
+            </select>
+          </label>
         </div>
+        <label id="fisNoLabel">Fiş No<input type="text" name="fisNo" /></label>
         <label>Kalemler (ürün / miktar / tutar)
           <textarea name="kalemler" rows="3" placeholder="Her satırda bir kalem"></textarea>
         </label>
@@ -97,7 +104,8 @@
               <th>Firma</th>
               <th>Toplam</th>
               <th>KDV</th>
-              <th>Fiş No</th>
+              <th>Belge Türü</th>
+              <th>Fiş/Fatura No</th>
               <th>Kategori</th>
               <th></th>
             </tr>

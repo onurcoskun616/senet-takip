@@ -8,7 +8,8 @@ const COLUMNS = [
   { header: 'Toplam Tutar', key: 'toplam', width: 16 },
   { header: 'KDV Tutarı', key: 'kdv', width: 14 },
   { header: 'Ödeme Yöntemi', key: 'odeme_yontemi', width: 16 },
-  { header: 'Fiş No', key: 'fis_no', width: 16 },
+  { header: 'Belge Türü', key: 'belge_turu', width: 16 },
+  { header: 'Fiş / Fatura No', key: 'fis_no', width: 18 },
   { header: 'Kalemler', key: 'kalemler', width: 40 },
   { header: 'KDV Detayı', key: 'kdv_detay', width: 24 },
   { header: 'Kategori', key: 'kategori', width: 16 },
@@ -60,7 +61,7 @@ async function buildWorkbook(rows) {
     kdvTotalCell.numFmt = '#,##0.00 "TL"';
   }
 
-  sheet.autoFilter = { from: 'A1', to: 'N1' };
+  sheet.autoFilter = { from: 'A1', to: 'O1' };
 
   return workbook;
 }

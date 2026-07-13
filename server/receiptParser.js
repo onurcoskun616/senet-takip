@@ -239,19 +239,55 @@ function findTotalAndKdvSpatial(paragraphs) {
   return { toplam, kdv };
 }
 
-function findFisNo(lines) {
-  // Oncelik sirasi onemli: "FİŞ NO" her zaman en dogru kaynak, "EKÜ NO"/
-  // "BELGE NO" gibi diger kasa numaralari fis no degildir. Bu yuzden once
-  // her turlu "FİŞ NO" varyasyonunu (ayni satirda, ayri satirda deger
-  // once/sonra) TUM metinde deniyoruz; ancak hicbiri bulunamazsa "EKÜ NO"
-  // gibi dusuk oncelikli alanlara dusuyoruz.
-  const fisInlinePatterns = [/F[İI][SŞ]\s*NO\s*[:.]?\s*(\S+)/i, /F[İI][SŞ]\s*[:#]\s*(\S+)/i, /T[İI]S\s*NO\s*[:.]?\s*(\S+)/i];
-  for (const re of fisInlinePatterns) {
+// OCR "E-Arşiv Fatura" ifadesini bazen "E - Arsiv Fatura" gibi
+// tire/bosluk etrafinda fazladan bosluklarla okuyabiliyor.
+const E_ARSIV_FATURA_RE = /E[-\s]*ARŞİV\s*FATURA|E[-\s]*ARSIV\s*FATURA/i;
+const E_FATURA_RE = /\bE[-\s]*FATURA\b/i;
+
+/**
+ * Fiş (yazar kasa fişi) ile e-Arşiv Fatura / e-Fatura hukuken ve
+ * bicimsel olarak farkli belgelerdir. Metinde bu ifadelerden biri
+ * geciyorsa belge turunu buna gore isaretliyoruz; bu, "Fiş No" yerine
+ * "Fatura No" kullanilmasi gerektigini belirlemek icin kullanilir.
+ */
+function findBelgeTuru(lines) {
+  const text = lines.join(' ');
+  if (E_ARSIV_FATURA_RE.test(text)) return 'E-Arşiv Fatura';
+  if (E_FATURA_RE.test(text)) return 'E-Fatura';
+  return 'Fiş';
+}
+
+const invoiceNoPatterns = [/FATURA\s*NO\s*[:.]?\s*(\S+)/i, /S[Iİ]RA\s*NO\s*[:.]?\s*(\S+)/i];
+const fisInlinePatterns = [/F[İI][SŞ]\s*NO\s*[:.]?\s*(\S+)/i, /F[İI][SŞ]\s*[:#]\s*(\S+)/i, /T[İI]S\s*NO\s*[:.]?\s*(\S+)/i];
+const fisFallbackPatterns = [/BELGE\s*NO\s*[:.]?\s*(\S+)/i, /EK[UÜ]\s*NO\s*[:.]?\s*(\S+)/i];
+
+function matchFirst(lines, patterns) {
+  for (const re of patterns) {
     for (const line of lines) {
       const m = line.match(re);
       if (m) return m[1];
     }
   }
+  return null;
+}
+
+function findFisNo(lines) {
+  // Belge turunden bagimsiz olarak once klasik "FİŞ NO" varyasyonlarina
+  // bakilir - bu her zaman en guvenilir kaynaktir (e-Arşiv Fatura olarak
+  // basilan bazi fişlerde bile hala ayrica bir "FİŞ NO" satiri bulunur).
+  // Hicbiri yoksa (orn. salt e-Fatura formatinda "FİŞ NO" hic olmaz)
+  // FATURA NO / Sıra No'ya son care olarak dusulur.
+  return findFisNoClassic(lines) || matchFirst(lines, invoiceNoPatterns);
+}
+
+function findFisNoClassic(lines) {
+  // Oncelik sirasi onemli: "FİŞ NO" her zaman en dogru kaynak, "EKÜ NO"/
+  // "BELGE NO" gibi diger kasa numaralari fis no degildir. Bu yuzden once
+  // her turlu "FİŞ NO" varyasyonunu (ayni satirda, ayri satirda deger
+  // once/sonra) TUM metinde deniyoruz; ancak hicbiri bulunamazsa "EKÜ NO"
+  // gibi dusuk oncelikli alanlara dusuyoruz.
+  const inline = matchFirst(lines, fisInlinePatterns);
+  if (inline) return inline;
 
   // Deger, etiketten ayri bir satirda (once ya da sonra) gelebiliyor
   // (orn. "...0032\nFİŞ NO\n..." ya da "FİŞ NO\n0085"). Etiketi tek basina
@@ -268,25 +304,7 @@ function findFisNo(lines) {
     }
   }
 
-  const fallbackPatterns = [/BELGE\s*NO\s*[:.]?\s*(\S+)/i, /EK[UÜ]\s*NO\s*[:.]?\s*(\S+)/i];
-  for (const re of fallbackPatterns) {
-    for (const line of lines) {
-      const m = line.match(re);
-      if (m) return m[1];
-    }
-  }
-
-  // Bazi fişler (orn. e-Arşiv Fatura formati) klasik "FİŞ NO" alani
-  // kullanmiyor; bu durumda FATURA NO veya Sıra No belge kimligi olarak
-  // kullanilabilir.
-  const invoicePatterns = [/FATURA\s*NO\s*[:.]?\s*(\S+)/i, /S[Iİ]RA\s*NO\s*[:.]?\s*(\S+)/i];
-  for (const re of invoicePatterns) {
-    for (const line of lines) {
-      const m = line.match(re);
-      if (m) return m[1];
-    }
-  }
-  return null;
+  return matchFirst(lines, fisFallbackPatterns);
 }
 
 function findPaymentMethod(lines) {
@@ -376,7 +394,10 @@ function parseReceiptText(rawText, paragraphs) {
     if (kdv === null) kdv = fallback.kdv;
   }
 
+  const belgeTuru = findBelgeTuru(lines);
+
   return {
+    belgeTuru,
     tarih: findDate(lines),
     saat: findTime(lines),
     firma: findFirma(lines),

@@ -11,6 +11,16 @@ const totalSummary = document.getElementById('totalSummary');
 
 let currentRawText = '';
 
+const belgeTuruSelect = document.getElementById('belgeTuruSelect');
+const fisNoLabel = document.getElementById('fisNoLabel');
+
+function updateFisNoLabel() {
+  const isFatura = belgeTuruSelect.value !== 'Fiş';
+  fisNoLabel.firstChild.textContent = isFatura ? 'Fatura No' : 'Fiş No';
+}
+
+belgeTuruSelect.addEventListener('change', updateFisNoLabel);
+
 function showStatus(text) {
   statusText.textContent = text;
   statusSection.classList.remove('hidden');
@@ -28,11 +38,13 @@ function fillForm(fields) {
   receiptForm.toplam.value = fields.toplam ?? '';
   receiptForm.kdv.value = fields.kdv ?? '';
   receiptForm.odemeYontemi.value = fields.odemeYontemi || '';
+  receiptForm.belgeTuru.value = fields.belgeTuru || 'Fiş';
   receiptForm.fisNo.value = fields.fisNo || '';
   receiptForm.kalemler.value = fields.kalemler || '';
   receiptForm.kdvDetay.value = fields.kdvDetay || '';
   currentRawText = fields.hamMetin || '';
   rawTextEl.textContent = currentRawText;
+  updateFisNoLabel();
   formSection.classList.remove('hidden');
 }
 
@@ -63,6 +75,7 @@ fileInput.addEventListener('change', async () => {
 cancelBtn.addEventListener('click', () => {
   formSection.classList.add('hidden');
   receiptForm.reset();
+  updateFisNoLabel();
 });
 
 receiptForm.addEventListener('submit', async (e) => {
@@ -82,6 +95,7 @@ receiptForm.addEventListener('submit', async (e) => {
       throw new Error(data.error || 'Kaydedilemedi.');
     }
     receiptForm.reset();
+    updateFisNoLabel();
     formSection.classList.add('hidden');
     await loadReceipts();
   } catch (err) {
@@ -119,6 +133,7 @@ async function loadReceipts() {
       <td>${escapeHtml(r.firma) || '-'}</td>
       <td>${formatMoney(r.toplam)}</td>
       <td>${formatMoney(r.kdv)}</td>
+      <td>${escapeHtml(r.belge_turu) || 'Fiş'}</td>
       <td>${escapeHtml(r.fis_no) || '-'}</td>
       <td>${escapeHtml(r.kategori) || '-'}</td>
       <td><button class="btn-delete" data-id="${r.id}" title="Sil">🗑</button></td>

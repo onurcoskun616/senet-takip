@@ -38,11 +38,11 @@ router.post('/scan', upload.single('fis'), async (req, res) => {
 
 // Kullanıcının onayladığı/düzelttiği fiş bilgilerini kaydeder.
 router.post('/', (req, res) => {
-  const { tarih, saat, firma, toplam, kdv, odemeYontemi, fisNo, kategori, notlar, kalemler, kdvDetay, hamMetin } = req.body;
+  const { tarih, saat, firma, toplam, kdv, odemeYontemi, fisNo, belgeTuru, kategori, notlar, kalemler, kdvDetay, hamMetin } = req.body;
 
   const stmt = db.prepare(`
-    INSERT INTO receipts (tarih, saat, firma, toplam, kdv, odeme_yontemi, fis_no, kategori, notlar, kalemler, kdv_detay, ham_metin)
-    VALUES (@tarih, @saat, @firma, @toplam, @kdv, @odeme_yontemi, @fis_no, @kategori, @notlar, @kalemler, @kdv_detay, @ham_metin)
+    INSERT INTO receipts (tarih, saat, firma, toplam, kdv, odeme_yontemi, fis_no, belge_turu, kategori, notlar, kalemler, kdv_detay, ham_metin)
+    VALUES (@tarih, @saat, @firma, @toplam, @kdv, @odeme_yontemi, @fis_no, @belge_turu, @kategori, @notlar, @kalemler, @kdv_detay, @ham_metin)
   `);
 
   const info = stmt.run({
@@ -53,6 +53,7 @@ router.post('/', (req, res) => {
     kdv: kdv === '' || kdv === undefined ? null : Number(kdv),
     odeme_yontemi: odemeYontemi || null,
     fis_no: fisNo || null,
+    belge_turu: belgeTuru || null,
     kategori: kategori || null,
     notlar: notlar || null,
     kalemler: kalemler || null,
@@ -72,7 +73,7 @@ router.get('/', (req, res) => {
 
 // Tek bir fişi günceller (OCR hatalarını manuel düzeltmek için).
 router.put('/:id', (req, res) => {
-  const { tarih, saat, firma, toplam, kdv, odemeYontemi, fisNo, kategori, notlar, kalemler, kdvDetay } = req.body;
+  const { tarih, saat, firma, toplam, kdv, odemeYontemi, fisNo, belgeTuru, kategori, notlar, kalemler, kdvDetay } = req.body;
 
   const existing = db.prepare('SELECT * FROM receipts WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Fiş bulunamadı.' });
@@ -80,7 +81,8 @@ router.put('/:id', (req, res) => {
   db.prepare(`
     UPDATE receipts SET
       tarih = @tarih, saat = @saat, firma = @firma, toplam = @toplam, kdv = @kdv,
-      odeme_yontemi = @odeme_yontemi, fis_no = @fis_no, kategori = @kategori, notlar = @notlar,
+      odeme_yontemi = @odeme_yontemi, fis_no = @fis_no, belge_turu = @belge_turu,
+      kategori = @kategori, notlar = @notlar,
       kalemler = @kalemler, kdv_detay = @kdv_detay
     WHERE id = @id
   `).run({
@@ -92,6 +94,7 @@ router.put('/:id', (req, res) => {
     kdv: kdv === '' || kdv === undefined ? null : Number(kdv),
     odeme_yontemi: odemeYontemi || null,
     fis_no: fisNo || null,
+    belge_turu: belgeTuru || null,
     kategori: kategori || null,
     notlar: notlar || null,
     kalemler: kalemler || null,

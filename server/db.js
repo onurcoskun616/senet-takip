@@ -20,6 +20,7 @@ db.exec(`
     kdv REAL,
     odeme_yontemi TEXT,
     fis_no TEXT,
+    belge_turu TEXT,
     kategori TEXT,
     notlar TEXT,
     kalemler TEXT,
@@ -35,6 +36,7 @@ const existingColumns = db.prepare("PRAGMA table_info(receipts)").all().map((c) 
 for (const [column, definition] of [
   ['kalemler', 'TEXT'],
   ['kdv_detay', 'TEXT'],
+  ['belge_turu', 'TEXT'],
 ]) {
   if (!existingColumns.includes(column)) {
     db.exec(`ALTER TABLE receipts ADD COLUMN ${column} ${definition}`);
