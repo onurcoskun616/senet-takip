@@ -58,10 +58,12 @@ function findTime(lines) {
   return null;
 }
 
-// Bir tutarin gorunebilecek uc bicimi: "1.234,56" (nokta=binlik,
-// virgul=ondalik), "1.234.56" (OCR virgulu de nokta okumus - iki nokta,
-// sonuncusu ondalik) ve duz "125,50"/"125.50".
-const AMOUNT_VALUE_RE = '(?:\\d{1,3}(?:\\.\\d{3})*(?:,\\d{2})|\\d{1,3}(?:\\.\\d{3})+\\.\\d{2}|\\d+[.,]\\d{2})';
+// Bir tutar hangi ayiraci (nokta/virgul) kullanirsa kullansin, gruplama
+// karakterinden bagimsiz olarak taniyoruz: "1.234,56" (nokta=binlik,
+// virgul=ondalik), "1.234.56" ya da "1,234,56" (OCR iki ayiraci da ayni
+// karakterle okumus olabiliyor - sonuncusu her zaman ondalik kabul
+// edilir) ve duz "125,50"/"125.50"/"1234,56" (binlik ayiraci hic yok).
+const AMOUNT_VALUE_RE = '(?:\\d{1,3}(?:[.,]\\d{3})*[.,]\\d{2}|\\d+[.,]\\d{2})';
 const AMOUNT_RE = new RegExp(`(${AMOUNT_VALUE_RE})\\s*(?:TL|₺)?\\s*$`, 'i');
 // Bir satirin tamamen (baslik/etiket olmadan) bir tutardan ibaret olup
 // olmadigini kontrol eder - orn. "* 205,00", "#59,90", "+930,00".
@@ -418,13 +420,14 @@ const AMOUNT_TOKEN_RE = new RegExp(AMOUNT_VALUE_RE, 'g');
 // care olarak deniyoruz.
 const CORRUPTED_PERCENT_LOOKUP = { 21: '1', 210: '10', 220: '20' };
 const CORRUPTED_PERCENT_RE = /\b(21|210|220)\b/;
-// OCR bazen "%" isaretini "X" harfiyle de karistirabiliyor: "%20" -> "X20"
-// gibi (orn. "MIGROS PLASTIK POSET X20"), hatta "%1" -> "XI" gibi (rakam
+// OCR bazen "%" isaretini "X" ya da "Z" harfiyle de karistirabiliyor: "%20"
+// -> "X20" (orn. "MIGROS PLASTIK POSET X20") ya da "%10" -> "Z10" (orn.
+// "VICCO BAG 34*45 BÜYÜ Z10 *10,00") gibi, hatta "%1" -> "XI" gibi (rakam
 // "1" de Romen rakami "I" ile karisiyor). Bunu miktar ifadelerinden
-// ("2 x 20,00" gibi bosluklu carpimlardan) ayirt etmek icin X'in hemen
+// ("2 x 20,00" gibi bosluklu carpimlardan) ayirt etmek icin harfin hemen
 // ardindan bosluksuz oran rakami gelmesini sartkoşuyoruz - gercek carpim
-// ifadelerinde X ile sayi arasinda daima bosluk olur.
-const CORRUPTED_X_PERCENT_RE = /\bX(1|10|20|I)\b/i;
+// ifadelerinde X/Z ile sayi arasinda daima bosluk olur.
+const CORRUPTED_X_PERCENT_RE = /\b[XZ](1|10|20|I)\b/i;
 const CORRUPTED_X_LOOKUP = { 1: '1', 10: '10', 20: '20', i: '1' };
 
 function matchKdvRate(line) {
@@ -576,6 +579,11 @@ function findKdvBreakdown(lines) {
  */
 function findItemLevelKdvSums(lines) {
   const sums = {};
+  // Bir satir zaten baska bir oran etiketi tarafindan tutar olarak
+  // kullanildiysa, ikinci kez (orn. hem kendi ayri etiketiyle hem de
+  // komsu urunun "indirim de dahil et" taramasiyla) sayilmasin diye
+  // fonksiyon boyunca paylasilan bir "tuketildi" kumesi tutuyoruz.
+  const consumed = new Set();
   for (let i = 0; i < lines.length; i++) {
     const rate = matchKdvRate(lines[i]);
     if (!rate) continue;
@@ -583,6 +591,7 @@ function findItemLevelKdvSums(lines) {
     // Once ayni satirda bir tutar var mi bak (orn. "% 10 * 750,00" - oran
     // ve tutar tek satirda birlikte). Yoksa yakin satirlara bak.
     let amount = null;
+    let priceIdx = i;
     const sameLineTokens = lines[i].match(AMOUNT_TOKEN_RE);
     if (sameLineTokens) {
       amount = parseAmount(sameLineTokens[sameLineTokens.length - 1]);
@@ -592,10 +601,12 @@ function findItemLevelKdvSums(lines) {
       for (const offset of nearOffsets(2)) {
         const neighborIdx = i + offset;
         const neighbor = lines[neighborIdx];
-        if (!neighbor || matchKdvRate(neighbor)) continue;
+        if (!neighbor || consumed.has(neighborIdx) || matchKdvRate(neighbor)) continue;
         const m = neighbor.trim().match(BARE_AMOUNT_RE);
         if (m) {
           amount = parseAmount(m[1]);
+          priceIdx = neighborIdx;
+          consumed.add(neighborIdx);
           // Sadece etiket (oran) satiri ile tutar satirinin ARASINDA (disinda
           // degil) bir İNDİRİM ifadesi varsa eksi kabul et; aksi halde komsu,
           // alakasiz bir urunun indirim etiketi yanlislikla bu tutari da
@@ -607,6 +618,29 @@ function findItemLevelKdvSums(lines) {
     }
     if (amount === null) continue;
     sums[rate] = (sums[rate] || 0) + amount;
+
+    // Urunun kendi fiyatindan hemen sonra, kendi ayri oran etiketi olmayan
+    // bir indirim satiri gelebiliyor (orn. "% 10\nHILDA\n*1.599,90\n*-223,98\n
+    // İNDİRİM" - indirimin kendi "% 10" etiketi yok, urununkini paylasiyor).
+    // Boyle bir tutari kacirmamak icin fiyattan hemen sonraki 1-2 satira da
+    // bakiyoruz; yalnizca aralarinda İNDİRİM ifadesi geciyorsa dahil ediyoruz.
+    // "consumed" kontrolu, bu tutarin baska bir satirin KENDI ayri oran
+    // etiketi tarafindan zaten sayilmis olmasini (cift sayilmayi) onler.
+    for (let offset = 1; offset <= 2; offset++) {
+      const discIdx = priceIdx + offset;
+      const discLine = lines[discIdx];
+      if (!discLine || matchKdvRate(discLine)) break;
+      if (consumed.has(discIdx)) continue;
+      const dm = discLine.trim().match(BARE_AMOUNT_RE);
+      // İndirim etiketi tutarin KENDI satirinda degil, bir onceki ya da bir
+      // sonraki satirda basiliyor olabilir (fis formatina gore "İNDİRİM"
+      // once ya da sonra gelebiliyor).
+      if (dm && hasDiscountLabelBetween(lines, discIdx - 1, discIdx + 1)) {
+        const discAmount = parseAmount(dm[1]);
+        sums[rate] += discAmount > 0 ? -discAmount : discAmount;
+        consumed.add(discIdx);
+      }
+    }
   }
   return sums;
 }
