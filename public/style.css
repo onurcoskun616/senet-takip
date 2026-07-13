@@ -277,4 +277,76 @@ th, td {
   font-size: 1rem;
 }
 
+.summary-section {
+  background: var(--card);
+  border-radius: 14px;
+  padding: 16px;
+  margin-top: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.summary-section h2 {
+  font-size: 1rem;
+  margin: 0 0 4px;
+}
+
+.summary-section h2 .hint {
+  font-size: 0.75rem;
+  font-weight: 400;
+  margin: 0;
+}
+
+.summary-section h3 {
+  font-size: 0.8rem;
+  margin: 16px 0 8px;
+  color: #445;
+}
+
+.summary-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 0.8rem;
+}
+
+.summary-bar-label {
+  width: 120px;
+  flex-shrink: 0;
+  color: #445;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summary-bar-track {
+  display: block;
+  flex: 1;
+  background: var(--bg);
+  border-radius: 6px;
+  overflow: hidden;
+  height: 18px;
+}
+
+.summary-bar-fill {
+  display: block;
+  background: var(--primary);
+  height: 100%;
+  border-radius: 6px;
+}
+
+.summary-bar-value {
+  width: 100px;
+  text-align: right;
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.summary-empty {
+  font-size: 0.85rem;
+  color: #667;
+  margin: 0;
+}
+
 .hidden { display: none; }

@@ -222,7 +222,63 @@ function passesFilters(r) {
   return true;
 }
 
+const categorySummaryEl = document.getElementById('categorySummary');
+const monthlySummaryEl = document.getElementById('monthlySummary');
+const MONTH_NAMES = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+
+function renderBarList(container, entries) {
+  container.innerHTML = '';
+  if (!entries.length) {
+    container.innerHTML = '<p class="summary-empty">Gösterilecek veri yok.</p>';
+    return;
+  }
+  const max = Math.max(...entries.map((e) => e.value));
+  for (const { label, value } of entries) {
+    const row = document.createElement('div');
+    row.className = 'summary-bar-row';
+    row.innerHTML = `
+      <span class="summary-bar-label" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
+      <span class="summary-bar-track"><span class="summary-bar-fill" style="width:${max ? (value / max) * 100 : 0}%"></span></span>
+      <span class="summary-bar-value">${formatMoney(value)}</span>
+    `;
+    container.appendChild(row);
+  }
+}
+
+// Gosterilen (filtrelenmis) fis kumesine gore kategori ve ay bazinda
+// harcama ozetini hesaplayip basit bar listeleri olarak cizer.
+function renderSummary(rows) {
+  const byKategori = {};
+  const byMonth = {};
+
+  for (const r of rows) {
+    const kategori = r.kategori || 'Belirtilmemiş';
+    byKategori[kategori] = (byKategori[kategori] || 0) + (Number(r.toplam) || 0);
+
+    const tarih = parseTarihToDate(r.tarih);
+    if (tarih) {
+      const key = `${tarih.getFullYear()}-${String(tarih.getMonth() + 1).padStart(2, '0')}`;
+      byMonth[key] = (byMonth[key] || 0) + (Number(r.toplam) || 0);
+    }
+  }
+
+  const kategoriEntries = Object.entries(byKategori)
+    .map(([label, value]) => ({ label, value }))
+    .sort((a, b) => b.value - a.value);
+  renderBarList(categorySummaryEl, kategoriEntries);
+
+  const monthEntries = Object.entries(byMonth)
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .slice(0, 6)
+    .map(([key, value]) => {
+      const [year, month] = key.split('-');
+      return { label: `${MONTH_NAMES[Number(month) - 1]} ${year}`, value };
+    });
+  renderBarList(monthlySummaryEl, monthEntries);
+}
+
 function renderReceipts(rows) {
+  renderSummary(rows);
   receiptsBody.innerHTML = '';
   let total = 0;
 
