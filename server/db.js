@@ -2,7 +2,12 @@ const path = require('path');
 const fs = require('fs');
 const Database = require('better-sqlite3');
 
-const dataDir = path.join(__dirname, '..', 'data');
+// DATA_DIR ortam degiskeni verilirse (orn. Render'da kalici bir disk
+// mount noktasi) veritabani orada tutulur; verilmezse projenin kendi
+// data/ klasoru kullanilir (varsayilan, gelistirme icin yeterli).
+const dataDir = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
@@ -60,5 +65,7 @@ for (const [column, definition] of [
     db.exec(`ALTER TABLE receipts ADD COLUMN ${column} ${definition}`);
   }
 }
+
+db.dataDir = dataDir;
 
 module.exports = db;

@@ -2,6 +2,9 @@ const fileInput = document.getElementById('fileInput');
 const statusSection = document.getElementById('statusSection');
 const statusText = document.getElementById('statusText');
 const formSection = document.getElementById('formSection');
+const formTitle = document.getElementById('formTitle');
+const formHint = document.getElementById('formHint');
+const submitBtn = document.getElementById('submitBtn');
 const receiptForm = document.getElementById('receiptForm');
 const rawTextEl = document.getElementById('rawText');
 const cancelBtn = document.getElementById('cancelBtn');
@@ -10,6 +13,51 @@ const receiptsBody = document.getElementById('receiptsBody');
 const totalSummary = document.getElementById('totalSummary');
 
 let currentRawText = '';
+let editingId = null;
+let receiptsCache = [];
+
+// Kaydedilmis bir fis (DB'den, snake_case alan adlariyla) ile OCR
+// tarama sonucu (camelCase) ayni forma doldurulabilsin diye ceviri yapar.
+function dbRowToFields(r) {
+  const fields = {
+    tarih: r.tarih,
+    saat: r.saat,
+    firma: r.firma,
+    toplam: r.toplam,
+    kdv: r.kdv,
+    odemeYontemi: r.odeme_yontemi,
+    belgeTuru: r.belge_turu,
+    fisNo: r.fis_no,
+    kalemler: r.kalemler,
+    kdvDetay: r.kdv_detay,
+    kategori: r.kategori,
+    notlar: r.notlar,
+    hamMetin: r.ham_metin,
+  };
+  for (const rate of ['1', '10', '20']) {
+    fields[`toplam${rate}`] = r[`toplam_${rate}`];
+    fields[`matrah${rate}`] = r[`matrah_${rate}`];
+    fields[`kdv${rate}`] = r[`kdv_${rate}`];
+  }
+  return fields;
+}
+
+function resetFormMode() {
+  editingId = null;
+  formTitle.textContent = 'Fiş Bilgilerini Kontrol Edin';
+  formHint.textContent = 'OCR ile okunan bilgileri kontrol edip gerekirse düzeltin, sonra kaydedin.';
+  submitBtn.textContent = 'Kaydet';
+}
+
+function startEdit(r) {
+  resetFormMode();
+  fillForm(dbRowToFields(r));
+  editingId = r.id;
+  formTitle.textContent = 'Fişi Düzenle';
+  formHint.textContent = 'Bilgileri düzenleyip güncelleyin.';
+  submitBtn.textContent = 'Güncelle';
+  formSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
 const belgeTuruSelect = document.getElementById('belgeTuruSelect');
 const fisNoLabel = document.getElementById('fisNoLabel');
@@ -47,6 +95,8 @@ function fillForm(fields) {
     receiptForm[`matrah${rate}`].value = fields[`matrah${rate}`] ?? '';
     receiptForm[`kdv${rate}`].value = fields[`kdv${rate}`] ?? '';
   }
+  receiptForm.kategori.value = fields.kategori || '';
+  receiptForm.notlar.value = fields.notlar || '';
   currentRawText = fields.hamMetin || '';
   rawTextEl.textContent = currentRawText;
   updateFisNoLabel();
@@ -57,6 +107,7 @@ fileInput.addEventListener('change', async () => {
   const file = fileInput.files[0];
   if (!file) return;
 
+  resetFormMode();
   showStatus('Fiş okunuyor, lütfen bekleyin...');
 
   const formData = new FormData();
@@ -80,6 +131,7 @@ fileInput.addEventListener('change', async () => {
 cancelBtn.addEventListener('click', () => {
   formSection.classList.add('hidden');
   receiptForm.reset();
+  resetFormMode();
   updateFisNoLabel();
 });
 
@@ -89,9 +141,12 @@ receiptForm.addEventListener('submit', async (e) => {
   const payload = Object.fromEntries(formData.entries());
   payload.hamMetin = currentRawText;
 
+  const url = editingId ? `/api/receipts/${editingId}` : '/api/receipts';
+  const method = editingId ? 'PUT' : 'POST';
+
   try {
-    const res = await fetch('/api/receipts', {
-      method: 'POST',
+    const res = await fetch(url, {
+      method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
@@ -100,6 +155,7 @@ receiptForm.addEventListener('submit', async (e) => {
       throw new Error(data.error || 'Kaydedilemedi.');
     }
     receiptForm.reset();
+    resetFormMode();
     updateFisNoLabel();
     formSection.classList.add('hidden');
     await loadReceipts();
@@ -126,6 +182,7 @@ function escapeHtml(value) {
 async function loadReceipts() {
   const res = await fetch('/api/receipts');
   const rows = await res.json();
+  receiptsCache = rows;
 
   receiptsBody.innerHTML = '';
   let total = 0;
@@ -141,6 +198,7 @@ async function loadReceipts() {
       <td>${escapeHtml(r.belge_turu) || 'Fiş'}</td>
       <td>${escapeHtml(r.fis_no) || '-'}</td>
       <td>${escapeHtml(r.kategori) || '-'}</td>
+      <td><button class="btn-edit" data-id="${r.id}" title="Düzenle">✏️</button></td>
       <td><button class="btn-delete" data-id="${r.id}" title="Sil">🗑</button></td>
     `;
     receiptsBody.appendChild(tr);
@@ -148,10 +206,22 @@ async function loadReceipts() {
 
   totalSummary.textContent = rows.length ? `${rows.length} fiş · Toplam: ${formatMoney(total)}` : '';
 
+  document.querySelectorAll('.btn-edit').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const row = receiptsCache.find((r) => r.id === Number(btn.dataset.id));
+      if (row) startEdit(row);
+    });
+  });
+
   document.querySelectorAll('.btn-delete').forEach((btn) => {
     btn.addEventListener('click', async () => {
       if (!confirm('Bu fişi silmek istediğinize emin misiniz?')) return;
       await fetch(`/api/receipts/${btn.dataset.id}`, { method: 'DELETE' });
+      if (editingId === Number(btn.dataset.id)) {
+        formSection.classList.add('hidden');
+        receiptForm.reset();
+        resetFormMode();
+      }
       await loadReceipts();
     });
   });

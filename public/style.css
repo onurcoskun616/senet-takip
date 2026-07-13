@@ -237,7 +237,8 @@ th, td {
   white-space: nowrap;
 }
 
-.btn-delete {
+.btn-delete,
+.btn-edit {
   background: none;
   border: none;
   cursor: pointer;

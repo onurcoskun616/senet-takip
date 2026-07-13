@@ -105,10 +105,26 @@ projeyi ücretsiz Render.com üzerinde yayınlayabilirsiniz:
    sabit bir link verir; bunu telefonunuzdan doğrudan açabilirsiniz.
 
 > Not: Render'ın ücretsiz planında disk kalıcı değildir — her yeniden
-> başlatma/deploy'da `data/fisler.db` sıfırlanır. Sadece test/demo amaçlı
-> kullanım için uygundur; gerçek/sürekli kullanım için ücretli bir "persistent
-> disk" eklemeniz veya harici bir veritabanına (örn. Render PostgreSQL)
-> geçmeniz gerekir.
+> başlatma/deploy'da veritabanı sıfırlanır. Sadece test/demo amaçlı
+> kullanım için uygundur; gerçek/sürekli kullanım için aşağıdaki gibi
+> ücretli bir "persistent disk" eklemeniz gerekir.
+
+### Kalıcı Disk Ekleme (Verilerin Deploy'lar Arasında Korunması)
+
+Render'ın ücretli planlarında bir "Persistent Disk" ekleyip veritabanını
+(ve fiş fotoğraflarını) orada tutabilirsiniz, böylece her yeni deploy'da
+kayıtlarınız silinmez:
+
+1. Render servisinizin **Disks** sekmesinden **Add Disk** deyip bir mount
+   noktası belirleyin (örn. `/var/data`).
+2. **Environment** sekmesinden `DATA_DIR` değişkenini ekleyip mount
+   noktasıyla aynı değeri girin (örn. `/var/data`).
+3. Yeniden deploy edin; sunucu artık veritabanını ve fiş fotoğraflarını
+   bu kalıcı diskte tutacaktır.
+
+`DATA_DIR` boş bırakılırsa (varsayılan), proje kendi `data/` klasörünü
+kullanır — yerel geliştirme için yeterlidir ama Render'ın ücretsiz
+planında kalıcı değildir.
 
 ## Fiş Ayrıştırma Hakkında
 

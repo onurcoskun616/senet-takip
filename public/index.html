@@ -30,8 +30,8 @@
     </section>
 
     <section id="formSection" class="form-section hidden">
-      <h2>Fiş Bilgilerini Kontrol Edin</h2>
-      <p class="hint">OCR ile okunan bilgileri kontrol edip gerekirse düzeltin, sonra kaydedin.</p>
+      <h2 id="formTitle">Fiş Bilgilerini Kontrol Edin</h2>
+      <p class="hint" id="formHint">OCR ile okunan bilgileri kontrol edip gerekirse düzeltin, sonra kaydedin.</p>
       <form id="receiptForm">
         <div class="form-row">
           <label>Tarih<input type="text" name="tarih" placeholder="GG.AA.YYYY" /></label>
@@ -118,7 +118,7 @@
 
         <div class="form-actions">
           <button type="button" id="cancelBtn" class="btn btn-outline">Vazgeç</button>
-          <button type="submit" class="btn btn-primary">Kaydet</button>
+          <button type="submit" id="submitBtn" class="btn btn-primary">Kaydet</button>
         </div>
       </form>
     </section>
@@ -139,6 +139,7 @@
               <th>Belge Türü</th>
               <th>Fiş/Fatura No</th>
               <th>Kategori</th>
+              <th></th>
               <th></th>
             </tr>
           </thead>
