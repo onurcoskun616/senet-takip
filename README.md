@@ -119,6 +119,16 @@ projeyi ücretsiz Render.com üzerinde yayınlayabilirsiniz:
 gözden geçirip düzeltme imkanı vardır. Okunan ham metni de "Okunan ham metni
 göster" bölümünden görebilirsiniz.
 
+### KDV Oranına Göre Kırılım
+
+Birçok fişte toplam tutarın altında, güncel KDV oranlarına (%1, %10, %20) göre
+bir kırılım tablosu basılıdır (örn. "KDV MATRAH KDV TUTAR KDV DAHİL" veya "KDV
+Oranı KDV Dahil Tutar KDV" başlıklı bir tablo). Sistem bu tabloyu otomatik
+okuyup her oran için Toplam Tutar / Matrah / KDV değerlerini formdaki "KDV
+Oranına Göre Kırılım" bölümüne ve Excel çıktısına ayrı sütunlar olarak ekler.
+Fişte bu kırılım tablosu hiç yoksa (yalnızca tek bir toplam KDV varsa) ilgili
+alanlar boş kalır; bu normaldir, mevcut olmayan bir veri türetilmez.
+
 ## API Uç Noktaları
 
 | Yöntem | Yol                        | Açıklama                                   |

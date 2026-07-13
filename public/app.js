@@ -42,6 +42,11 @@ function fillForm(fields) {
   receiptForm.fisNo.value = fields.fisNo || '';
   receiptForm.kalemler.value = fields.kalemler || '';
   receiptForm.kdvDetay.value = fields.kdvDetay || '';
+  for (const rate of ['1', '10', '20']) {
+    receiptForm[`toplam${rate}`].value = fields[`toplam${rate}`] ?? '';
+    receiptForm[`matrah${rate}`].value = fields[`matrah${rate}`] ?? '';
+    receiptForm[`kdv${rate}`].value = fields[`kdv${rate}`] ?? '';
+  }
   currentRawText = fields.hamMetin || '';
   rawTextEl.textContent = currentRawText;
   updateFisNoLabel();

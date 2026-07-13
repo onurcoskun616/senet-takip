@@ -25,6 +25,15 @@ db.exec(`
     notlar TEXT,
     kalemler TEXT,
     kdv_detay TEXT,
+    toplam_1 REAL,
+    matrah_1 REAL,
+    kdv_1 REAL,
+    toplam_10 REAL,
+    matrah_10 REAL,
+    kdv_10 REAL,
+    toplam_20 REAL,
+    matrah_20 REAL,
+    kdv_20 REAL,
     ham_metin TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
   )
@@ -37,6 +46,15 @@ for (const [column, definition] of [
   ['kalemler', 'TEXT'],
   ['kdv_detay', 'TEXT'],
   ['belge_turu', 'TEXT'],
+  ['toplam_1', 'REAL'],
+  ['matrah_1', 'REAL'],
+  ['kdv_1', 'REAL'],
+  ['toplam_10', 'REAL'],
+  ['matrah_10', 'REAL'],
+  ['kdv_10', 'REAL'],
+  ['toplam_20', 'REAL'],
+  ['matrah_20', 'REAL'],
+  ['kdv_20', 'REAL'],
 ]) {
   if (!existingColumns.includes(column)) {
     db.exec(`ALTER TABLE receipts ADD COLUMN ${column} ${definition}`);

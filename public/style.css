@@ -159,6 +159,45 @@ input, select, textarea {
   overflow-y: auto;
 }
 
+.kdv-breakdown {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px 4px;
+  margin-bottom: 16px;
+}
+
+.kdv-breakdown legend {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #445;
+  padding: 0 4px;
+}
+
+.kdv-breakdown-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kdv-breakdown-row {
+  display: grid;
+  grid-template-columns: 0.6fr 1fr 1fr 1fr;
+  gap: 6px;
+  align-items: center;
+}
+
+.kdv-breakdown-row input {
+  margin-top: 0;
+  padding: 6px;
+  font-size: 0.85rem;
+}
+
+.kdv-breakdown-header span {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #667;
+}
+
 .form-actions {
   display: flex;
   gap: 10px;

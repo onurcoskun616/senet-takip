@@ -394,6 +394,122 @@ function findKdvDetay(lines) {
   return items.length ? items.join('\n') : null;
 }
 
+// Guncel KDV oranlari (Temmuz 2026 itibariyle): %1, %10, %20.
+const KDV_RATES = ['1', '10', '20'];
+const AMOUNT_TOKEN_RE = /\d{1,3}(?:\.\d{3})*(?:,\d{2})|\d+[.,]\d{2}/g;
+
+// Iki sayidan (buyugu "dahil" ya da "matrah" olabilir) hangisinin hangisi
+// oldugunu, verilen KDV oranina gore hesaplanan beklenen KDV tutariyla
+// karsilastirarak bulur; ne kadar iyi uydugunu (diff) da dondurur, boylece
+// birden fazla aday cift arasinda en iyisi secilebilir.
+function analyzeTwoNumbers(rate, a, b) {
+  const big = Math.max(a, b);
+  const small = Math.min(a, b);
+  const kdvIfDahil = (big * rate) / (100 + rate);
+  const kdvIfMatrah = (big * rate) / 100;
+  const diffDahil = Math.abs(small - kdvIfDahil);
+  const diffMatrah = Math.abs(small - kdvIfMatrah);
+  if (diffMatrah <= diffDahil) {
+    return { diff: diffMatrah, value: { matrah: big, kdv: small, dahil: big + small } };
+  }
+  return { diff: diffDahil, value: { dahil: big, kdv: small, matrah: big - small } };
+}
+
+/**
+ * Bir KDV kirilim satirinda bulunan 2-3 sayidan (siralari fis formatina
+ * gore degisebiliyor: bazen MATRAH-KDV-DAHIL, bazen DAHIL-KDV) hangisinin
+ * "dahil tutar", "matrah" ve "KDV tutari" oldugunu, oran bilgisini
+ * kullanarak (dahil = matrah + kdv oldugu icin) kendiliginden dogrular.
+ */
+function analyzeKdvRow(rate, numbers) {
+  if (numbers.length >= 3) {
+    // 1) Uc sayi da birbiriyle iliskiliyse (biri digerlerinin toplamina
+    // esitse) bu en guvenilir tespittir.
+    for (let i = 0; i < numbers.length; i++) {
+      const others = numbers.filter((_, idx) => idx !== i);
+      if (Math.abs(numbers[i] - (others[0] + others[1])) < 0.05) {
+        const dahil = numbers[i];
+        const kdv = Math.min(others[0], others[1]);
+        const matrah = Math.max(others[0], others[1]);
+        return { dahil, matrah, kdv };
+      }
+    }
+    // 2) Uc sayi da iliskili degilse, muhtemelen komsu bir orana ait
+    // yabanci bir sayi araya karismistir (orn. onceki satirdaki farkli bir
+    // oranin degeri). Ikili kombinasyonlar icinde orana en iyi uyani
+    // secip fazlaligi yok sayiyoruz.
+    let best = null;
+    for (let i = 0; i < numbers.length; i++) {
+      for (let j = i + 1; j < numbers.length; j++) {
+        const candidate = analyzeTwoNumbers(rate, numbers[i], numbers[j]);
+        if (!best || candidate.diff < best.diff) best = candidate;
+      }
+    }
+    return best ? best.value : null;
+  }
+  if (numbers.length === 2) {
+    return analyzeTwoNumbers(rate, numbers[0], numbers[1]).value;
+  }
+  return null;
+}
+
+/**
+ * Fişlerde sik gorulen "KDV MATRAH KDV TUTAR KDV DAHİL" ya da "KDV ORANI
+ * KDV DAHİL TUTAR KDV" tarzi kirilim tablosunu satir satir tarayip, her
+ * guncel KDV orani (%1, %10, %20) icin Matrah/KDV/Toplam(dahil) tutarini
+ * cikarir. Bu, kullanicinin paylastigi ornek Excel tablosundaki
+ * (TOPLAM TUTAR / MATRAH / KDV, oran bazinda) yapiyla eslesir.
+ */
+// KDV kirilim tablosunun basladigini gosteren baslik satiri (orn.
+// "KDV MATRAH", "KDV Oranı KDV Dahil Tutar KDV", "KDV TUTARI KDV'Lİ TOPLAM").
+// Urun satirlarindaki tek basina "% NN" ifadeleriyle karismamasi icin,
+// kirilim aramasina bu baslik bulunana KADAR baslamiyoruz.
+const KDV_BREAKDOWN_HEADER_RE = /KDV.*(ORANI|MATRAH|TUTAR|DAHİL|DAHIL)|(ORANI|MATRAH|TUTAR|DAHİL|DAHIL).*KDV/i;
+const KDV_BREAKDOWN_STOP_RE = /KDV|TOPLAM|ORANI|MATRAH|DAHİL|DAHIL/i;
+
+function findKdvBreakdown(lines) {
+  let startIndex = lines.findIndex((l) => KDV_BREAKDOWN_HEADER_RE.test(l));
+  if (startIndex === -1) return {};
+
+  const result = {};
+  const consumed = new Set();
+
+  for (let i = startIndex; i < lines.length; i++) {
+    const rateMatch = lines[i].match(/%\s*(\d{1,2})\b/);
+    if (!rateMatch || !KDV_RATES.includes(rateMatch[1])) continue;
+    const rate = rateMatch[1];
+    if (result[rate]) continue; // ayni oran icin ilk bulunani kullan
+
+    // Ayni satirda tutar(lar) olabilir (orn. "% 20 132.50").
+    const numbers = [];
+    const sameLineTokens = lines[i].match(AMOUNT_TOKEN_RE);
+    if (sameLineTokens) numbers.push(...sameLineTokens.map(parseAmount));
+
+    // Kalan tutarlar (matrah/kdv/dahil) etiketten once ya da sonra, ayri
+    // "ciplak" satirlar halinde gelebiliyor (orn. deger satiri oran
+    // satirindan once cikabiliyor). En yakin satirdan baslayarak hem ileri
+    // hem geri yonde arıyoruz.
+    for (const offset of nearOffsets(4)) {
+      if (numbers.length >= 3) break;
+      const idx = i + offset;
+      if (consumed.has(idx) || !lines[idx]) continue;
+      if (KDV_BREAKDOWN_STOP_RE.test(lines[idx])) continue;
+      const m = lines[idx].trim().match(BARE_AMOUNT_RE);
+      if (m) {
+        numbers.push(parseAmount(m[1]));
+        consumed.add(idx);
+      }
+    }
+
+    const cleaned = numbers.filter((n) => n !== null);
+    if (cleaned.length < 2) continue;
+
+    const analyzed = analyzeKdvRow(Number(rate), cleaned);
+    if (analyzed) result[rate] = analyzed;
+  }
+  return result;
+}
+
 function parseReceiptText(rawText, paragraphs) {
   const lines = rawText
     .split('\n')
@@ -415,6 +531,7 @@ function parseReceiptText(rawText, paragraphs) {
   }
 
   const belgeTuru = findBelgeTuru(lines);
+  const kdvKirilim = findKdvBreakdown(lines);
 
   return {
     belgeTuru,
@@ -427,6 +544,15 @@ function parseReceiptText(rawText, paragraphs) {
     odemeYontemi: findPaymentMethod(lines),
     kalemler: findKalemler(lines),
     kdvDetay: findKdvDetay(lines),
+    toplam1: kdvKirilim['1']?.dahil ?? null,
+    matrah1: kdvKirilim['1']?.matrah ?? null,
+    kdv1: kdvKirilim['1']?.kdv ?? null,
+    toplam10: kdvKirilim['10']?.dahil ?? null,
+    matrah10: kdvKirilim['10']?.matrah ?? null,
+    kdv10: kdvKirilim['10']?.kdv ?? null,
+    toplam20: kdvKirilim['20']?.dahil ?? null,
+    matrah20: kdvKirilim['20']?.matrah ?? null,
+    kdv20: kdvKirilim['20']?.kdv ?? null,
     hamMetin: rawText,
   };
 }
