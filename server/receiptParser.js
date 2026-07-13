@@ -389,6 +389,25 @@ function findFirma(lines) {
   return nameParts.length ? nameParts.join(' ') : null;
 }
 
+// Bilinen firma adi kaliplarina gore Kategori alanini otomatik tahmin
+// eder. Sadece cok yaygin/belirgin zincir adlarini kapsar; eslesme yoksa
+// kullanicinin kendisi secer (null donup alani bos birakiyoruz).
+const KATEGORI_RULES = [
+  { re: /MIGROS|\bBIM\b|\bBİM\b|ŞOK\s*MARKET|\bA101\b|CARREFOUR|METRO\s*MARKET|MACROCENTER/i, kategori: 'Gıda' },
+  { re: /RESTORAN|RESTAURANT|BURGER|CAFE|KAFE|LOKANTA|PIDE|KEBAP|PASTANE|FIRIN/i, kategori: 'Gıda' },
+  { re: /\bSHELL\b|\bOPET\b|\bBP\b|PETROL\s*OFIS|PETROL\s*OFİS|\bTOTAL\b|\bAYGAZ\b|LUKOIL|PO\s*PETROL/i, kategori: 'Ulaşım' },
+  { re: /LC\s*WAIKIKI|\bLCW\b|\bVICCO\b|KOŞ\s*AKSESUAR|\bTOYZZ\b|DEFACTO|\bZARA\b|\bH\s*&\s*M\b|\bMANGO\b|\bKOTON\b/i, kategori: 'Giyim' },
+  { re: /OFIS\s*1|KIRTASIYE|KIRTASİYE|OFİS\s*1/i, kategori: 'Ofis Malzemesi' },
+];
+
+function guessKategori(firma) {
+  if (!firma) return null;
+  for (const rule of KATEGORI_RULES) {
+    if (rule.re.test(firma)) return rule.kategori;
+  }
+  return null;
+}
+
 function findKalemler(lines) {
   // Urun satirlari genelde "miktar x/İ birim fiyat" seklinde bir desen
   // icerir (orn. "2 x 22,75", "20 * 205,00"). Bu satirlari oldugu gibi
@@ -690,17 +709,20 @@ function parseReceiptText(rawText, paragraphs) {
     if (Object.keys(derived).length > 0) kdvKirilim = derived;
   }
 
+  const firma = findFirma(lines);
+
   return {
     belgeTuru,
     tarih: findDate(lines),
     saat: findTime(lines),
-    firma: findFirma(lines),
+    firma,
     toplam,
     kdv,
     fisNo: findFisNo(lines),
     odemeYontemi: findPaymentMethod(lines),
     kalemler: findKalemler(lines),
     kdvDetay: findKdvDetay(lines),
+    kategori: guessKategori(firma),
     toplam1: kdvKirilim['1']?.dahil ?? null,
     matrah1: kdvKirilim['1']?.matrah ?? null,
     kdv1: kdvKirilim['1']?.kdv ?? null,
