@@ -12,6 +12,7 @@ const COLUMNS = [
   { header: 'Kategori', key: 'kategori', width: 16 },
   { header: 'Notlar', key: 'notlar', width: 26 },
   { header: 'Eklenme Tarihi', key: 'created_at', width: 20 },
+  { header: 'Okunan Ham Metin', key: 'ham_metin', width: 60 },
 ];
 
 async function buildWorkbook(rows) {
@@ -35,6 +36,7 @@ async function buildWorkbook(rows) {
 
   sheet.getColumn('toplam').numFmt = '#,##0.00 "TL"';
   sheet.getColumn('kdv').numFmt = '#,##0.00 "TL"';
+  sheet.getColumn('ham_metin').alignment = { wrapText: true, vertical: 'top' };
 
   const lastDataRow = rows.length + 1;
   if (rows.length > 0) {
@@ -54,7 +56,7 @@ async function buildWorkbook(rows) {
     kdvTotalCell.numFmt = '#,##0.00 "TL"';
   }
 
-  sheet.autoFilter = { from: 'A1', to: `K1` };
+  sheet.autoFilter = { from: 'A1', to: 'L1' };
 
   return workbook;
 }
