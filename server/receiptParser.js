@@ -10,12 +10,18 @@ function parseAmount(raw) {
   if (!raw) return null;
   // "1.234,56" -> 1234.56  |  "125,50" -> 125.50  |  "125.50" -> 125.50
   // "-164,99" -> -164.99 (indirim satirlari icin isaret korunur)
+  // "1.099.95" -> 1099.95 (OCR bazen "1.099,95" icindeki "," isaretini de
+  // "." olarak okuyor; boyle durumda son ayiraci ondalik, oncekileri
+  // binlik kabul ediyoruz - hangi karakter oldugundan bagimsiz).
   const isNegative = /^\s*-/.test(raw);
   let s = raw.trim().replace(/[^\d.,]/g, '');
-  if (s.includes(',') && s.includes('.')) {
-    s = s.replace(/\./g, '').replace(',', '.');
-  } else if (s.includes(',')) {
-    s = s.replace(',', '.');
+  if (!s) return null;
+  const lastSep = Math.max(s.lastIndexOf(','), s.lastIndexOf('.'));
+  if (lastSep !== -1 && s.length - lastSep - 1 === 2) {
+    const intPart = s.slice(0, lastSep).replace(/[.,]/g, '');
+    s = `${intPart}.${s.slice(lastSep + 1)}`;
+  } else {
+    s = s.replace(/,/g, '.');
   }
   const n = parseFloat(s);
   if (!Number.isFinite(n)) return null;
@@ -52,10 +58,14 @@ function findTime(lines) {
   return null;
 }
 
-const AMOUNT_RE = /(\d{1,3}(?:\.\d{3})*(?:,\d{2})|\d+[.,]\d{2})\s*(?:TL|₺)?\s*$/i;
+// Bir tutarin gorunebilecek uc bicimi: "1.234,56" (nokta=binlik,
+// virgul=ondalik), "1.234.56" (OCR virgulu de nokta okumus - iki nokta,
+// sonuncusu ondalik) ve duz "125,50"/"125.50".
+const AMOUNT_VALUE_RE = '(?:\\d{1,3}(?:\\.\\d{3})*(?:,\\d{2})|\\d{1,3}(?:\\.\\d{3})+\\.\\d{2}|\\d+[.,]\\d{2})';
+const AMOUNT_RE = new RegExp(`(${AMOUNT_VALUE_RE})\\s*(?:TL|₺)?\\s*$`, 'i');
 // Bir satirin tamamen (baslik/etiket olmadan) bir tutardan ibaret olup
 // olmadigini kontrol eder - orn. "* 205,00", "#59,90", "+930,00".
-const BARE_AMOUNT_RE = /^[*#$₺+\s]*(-?(?:\d{1,3}(?:\.\d{3})*(?:,\d{2})|\d+[.,]\d{2}))\s*(?:TL|₺)?[*#+\s]*$/i;
+const BARE_AMOUNT_RE = new RegExp(`^[*#$₺+\\s]*(-?${AMOUNT_VALUE_RE})\\s*(?:TL|₺)?[*#+\\s]*$`, 'i');
 
 // Etiketten en yakin (once daha kisa mesafeli, sonra ileri/geri sirayla)
 // satirlara bakmak icin kullanilan ofset sirasi: +1,-1,+2,-2,...
@@ -399,7 +409,7 @@ function findKdvDetay(lines) {
 
 // Guncel KDV oranlari (Temmuz 2026 itibariyle): %1, %10, %20.
 const KDV_RATES = ['1', '10', '20'];
-const AMOUNT_TOKEN_RE = /\d{1,3}(?:\.\d{3})*(?:,\d{2})|\d+[.,]\d{2}/g;
+const AMOUNT_TOKEN_RE = new RegExp(AMOUNT_VALUE_RE, 'g');
 
 // OCR bazen "%" isaretini "2" rakamiyla karistirip yapistiriyor: "%20" ->
 // "220", "%1." -> "21.", "%10" -> "210" gibi (gercek "%" karakteri hic
@@ -408,13 +418,41 @@ const AMOUNT_TOKEN_RE = /\d{1,3}(?:\.\d{3})*(?:,\d{2})|\d+[.,]\d{2}/g;
 // care olarak deniyoruz.
 const CORRUPTED_PERCENT_LOOKUP = { 21: '1', 210: '10', 220: '20' };
 const CORRUPTED_PERCENT_RE = /\b(21|210|220)\b/;
+// OCR bazen "%" isaretini "X" harfiyle de karistirabiliyor: "%20" -> "X20"
+// gibi (orn. "MIGROS PLASTIK POSET X20"), hatta "%1" -> "XI" gibi (rakam
+// "1" de Romen rakami "I" ile karisiyor). Bunu miktar ifadelerinden
+// ("2 x 20,00" gibi bosluklu carpimlardan) ayirt etmek icin X'in hemen
+// ardindan bosluksuz oran rakami gelmesini sartkoşuyoruz - gercek carpim
+// ifadelerinde X ile sayi arasinda daima bosluk olur.
+const CORRUPTED_X_PERCENT_RE = /\bX(1|10|20|I)\b/i;
+const CORRUPTED_X_LOOKUP = { 1: '1', 10: '10', 20: '20', i: '1' };
 
 function matchKdvRate(line) {
   const real = line.match(/%\s*(\d{1,2})\b/);
   if (real && KDV_RATES.includes(real[1])) return real[1];
   const corrupted = line.match(CORRUPTED_PERCENT_RE);
   if (corrupted && CORRUPTED_PERCENT_LOOKUP[corrupted[1]]) return CORRUPTED_PERCENT_LOOKUP[corrupted[1]];
+  const xCorrupted = line.match(CORRUPTED_X_PERCENT_RE);
+  if (xCorrupted) {
+    const rate = CORRUPTED_X_LOOKUP[xCorrupted[1].toLowerCase()];
+    if (rate) return rate;
+  }
   return null;
+}
+
+// "% 15 % İndirim" gibi bir indirim satiri, kendi tutarini genelde eksi
+// isaretiyle yazdirir (orn. "* -164,99"); ancak OCR bu eksi isaretini bazen
+// tamamen kaybediyor ("* 164,99" gibi pozitif gorunuyor). Boyle bir tutarin
+// hemen yakininda "İNDİRİM" ifadesi geciyorsa, isareti kaybolmus olsa bile
+// bu tutarin aslinda bir indirim (eksi) oldugunu varsayiyoruz.
+const INDIRIM_RE = /İ?NDİRİM|INDIRIM/i;
+function hasDiscountLabelBetween(lines, indexA, indexB) {
+  const from = Math.min(indexA, indexB);
+  const to = Math.max(indexA, indexB);
+  for (let i = from; i <= to; i++) {
+    if (INDIRIM_RE.test(lines[i])) return true;
+  }
+  return false;
 }
 
 // Iki sayidan (buyugu "dahil" ya da "matrah" olabilir) hangisinin hangisi
@@ -552,11 +590,17 @@ function findItemLevelKdvSums(lines) {
 
     if (amount === null) {
       for (const offset of nearOffsets(2)) {
-        const neighbor = lines[i + offset];
+        const neighborIdx = i + offset;
+        const neighbor = lines[neighborIdx];
         if (!neighbor || matchKdvRate(neighbor)) continue;
         const m = neighbor.trim().match(BARE_AMOUNT_RE);
         if (m) {
           amount = parseAmount(m[1]);
+          // Sadece etiket (oran) satiri ile tutar satirinin ARASINDA (disinda
+          // degil) bir İNDİRİM ifadesi varsa eksi kabul et; aksi halde komsu,
+          // alakasiz bir urunun indirim etiketi yanlislikla bu tutari da
+          // eksiye cevirebiliyordu.
+          if (amount > 0 && hasDiscountLabelBetween(lines, i, neighborIdx)) amount = -amount;
           break;
         }
       }
