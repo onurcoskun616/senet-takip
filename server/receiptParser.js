@@ -136,6 +136,31 @@ function parseBareAmount(text) {
 }
 
 /**
+ * Vision bazen dikey olarak ust uste duran birden fazla tutari
+ * ("* 68,18\n* 750,00" gibi) TEK bir paragrafta birlestiriyor. Boyle bir
+ * paragraf BARE_AMOUNT_RE ile bir butun olarak eslesmedigi icin icindeki
+ * degerler gorunmez oluyordu. Her paragrafi kendi alt satirlarina ayirip,
+ * paragrafin topY-bottomY araligina orantili bir dikey konum tahmini
+ * vererek her alt satiri ayri bir "tutar adayi" haline getiriyoruz.
+ */
+function buildAmountCandidates(paragraphs) {
+  const candidates = [];
+  for (const p of paragraphs) {
+    const subLines = p.text.split('\n').filter((l) => l.trim());
+    if (subLines.length <= 1) {
+      candidates.push({ text: p.text, topY: p.topY, leftX: p.leftX, parent: p });
+      continue;
+    }
+    const span = (p.bottomY ?? p.topY) - p.topY;
+    subLines.forEach((line, i) => {
+      const topY = p.topY + (span * i) / (subLines.length - 1);
+      candidates.push({ text: line, topY, leftX: p.leftX, parent: p });
+    });
+  }
+  return candidates;
+}
+
+/**
  * TOPLAM/KDV tutarlarini, paragraflarin fis uzerindeki gercek 2 boyutlu
  * konumuna (metin sirasina degil) bakarak bulur. Cok kalemli fişlerde
  * metin-sirasi tabanli tahmin, etikete metinde yakin ama fis uzerinde
@@ -146,6 +171,7 @@ function findTotalAndKdvSpatial(paragraphs) {
   let toplam = null;
   let kdv = null;
   const consumed = new Set();
+  const amountCandidates = buildAmountCandidates(paragraphs);
 
   const labelParagraphs = [];
   for (const p of paragraphs) {
@@ -166,13 +192,13 @@ function findTotalAndKdvSpatial(paragraphs) {
       continue;
     }
 
-    // Ayni paragrafta tutar yoksa en yakin "ciplak tutar" paragrafini ara:
+    // Ayni paragrafta tutar yoksa en yakin "ciplak tutar" adayini ara:
     // once ayni satirdakileri (topY yakin) soldan-saga mesafeye gore,
     // yoksa dikey olarak en yakin satiri tercih ediyoruz.
     let best = null;
     let bestScore = Infinity;
-    for (const cand of paragraphs) {
-      if (cand === label.p || consumed.has(cand)) continue;
+    for (const cand of amountCandidates) {
+      if (cand.parent === label.p || consumed.has(cand)) continue;
       const amt = parseBareAmount(cand.text);
       if (amt === null) continue;
       const dy = Math.abs(cand.topY - label.p.topY);
@@ -215,7 +241,10 @@ function findFisNo(lines) {
     if (!bareFisLabelRe.test(lines[i])) continue;
     for (const offset of nearOffsets(3)) {
       const neighbor = lines[i + offset];
-      if (neighbor && /^\d{3,6}$/.test(neighbor.trim())) return neighbor.trim();
+      if (!neighbor) continue;
+      // Deger satiri bazen basinda ":" ile geliyor (orn. "FİŞ NO\n: 0198").
+      const m = neighbor.trim().match(/^[:.]?\s*(\d{3,6})$/);
+      if (m) return m[1];
     }
   }
 

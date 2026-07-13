@@ -34,6 +34,7 @@ function reconstructReadingOrder(page) {
       paragraphs.push({
         text: text.trim(),
         topY: ys.length ? Math.min(...ys) : 0,
+        bottomY: ys.length ? Math.max(...ys) : 0,
         leftX: xs.length ? Math.min(...xs) : 0,
       });
     }
