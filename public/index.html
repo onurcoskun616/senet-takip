@@ -133,6 +133,23 @@
         <h2>Kayıtlı Fişler</h2>
         <span id="totalSummary" class="total-summary"></span>
       </div>
+      <div class="filter-bar">
+        <label>Başlangıç<input type="date" id="filterStart" /></label>
+        <label>Bitiş<input type="date" id="filterEnd" /></label>
+        <label>Firma<input type="text" id="filterFirma" placeholder="Firma ara..." /></label>
+        <label>Kategori
+          <select id="filterKategori">
+            <option value="">Tümü</option>
+            <option>Gıda</option>
+            <option>Giyim</option>
+            <option>Ulaşım</option>
+            <option>Ofis Malzemesi</option>
+            <option>Fatura</option>
+            <option>Diğer</option>
+          </select>
+        </label>
+        <button type="button" id="filterClear" class="btn btn-outline">Filtreyi Temizle</button>
+      </div>
       <div class="table-wrap">
         <table id="receiptsTable">
           <thead>

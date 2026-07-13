@@ -193,11 +193,36 @@ function escapeHtml(value) {
   return div.innerHTML;
 }
 
-async function loadReceipts() {
-  const res = await fetch('/api/receipts');
-  const rows = await res.json();
-  receiptsCache = rows;
+const filterStart = document.getElementById('filterStart');
+const filterEnd = document.getElementById('filterEnd');
+const filterFirma = document.getElementById('filterFirma');
+const filterKategori = document.getElementById('filterKategori');
+const filterClear = document.getElementById('filterClear');
 
+// "GG.AA.YYYY" formatindaki tarih metnini karsilastirilabilir bir Date'e cevirir.
+function parseTarihToDate(tarih) {
+  if (!tarih) return null;
+  const m = tarih.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (!m) return null;
+  return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+}
+
+function passesFilters(r) {
+  const firmaQuery = filterFirma.value.trim().toLocaleLowerCase('tr');
+  if (firmaQuery && !(r.firma || '').toLocaleLowerCase('tr').includes(firmaQuery)) return false;
+  if (filterKategori.value && r.kategori !== filterKategori.value) return false;
+
+  const tarih = parseTarihToDate(r.tarih);
+  if (filterStart.value) {
+    if (!tarih || tarih < new Date(filterStart.value)) return false;
+  }
+  if (filterEnd.value) {
+    if (!tarih || tarih > new Date(filterEnd.value)) return false;
+  }
+  return true;
+}
+
+function renderReceipts(rows) {
   receiptsBody.innerHTML = '';
   let total = 0;
 
@@ -219,7 +244,8 @@ async function loadReceipts() {
     receiptsBody.appendChild(tr);
   }
 
-  totalSummary.textContent = rows.length ? `${rows.length} fiş · Toplam: ${formatMoney(total)}` : '';
+  const suffix = rows.length !== receiptsCache.length ? ` (${receiptsCache.length} kayıttan filtrelendi)` : '';
+  totalSummary.textContent = rows.length ? `${rows.length} fiş · Toplam: ${formatMoney(total)}${suffix}` : (receiptsCache.length ? 'Filtreyle eşleşen fiş yok' : '');
 
   document.querySelectorAll('.btn-edit').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -240,6 +266,26 @@ async function loadReceipts() {
       await loadReceipts();
     });
   });
+}
+
+function applyFilters() {
+  renderReceipts(receiptsCache.filter(passesFilters));
+}
+
+[filterStart, filterEnd, filterKategori].forEach((el) => el.addEventListener('change', applyFilters));
+filterFirma.addEventListener('input', applyFilters);
+filterClear.addEventListener('click', () => {
+  filterStart.value = '';
+  filterEnd.value = '';
+  filterFirma.value = '';
+  filterKategori.value = '';
+  applyFilters();
+});
+
+async function loadReceipts() {
+  const res = await fetch('/api/receipts');
+  receiptsCache = await res.json();
+  applyFilters();
 }
 
 if ('serviceWorker' in navigator) {
