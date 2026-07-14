@@ -350,6 +350,10 @@ const DOCUMENT_HEADER_RE =
 // adindan hemen once ya da sonra basilabiliyor; bunlar firma adinin
 // parcasi degildir.
 const GREETING_RE = /TE[ŞS]EKK[UÜ]RLER|TEŞEKKÜR\s*EDERİZ|TESEKKUR\s*EDERIZ|HOŞ\s*GELDİNİZ|HOS\s*GELDINIZ/i;
+// Bazi zincirler (orn. A101) fisin basina firma adindan ONCE magaza
+// adi/kodu ("Mgz Adi : Hazar Bingol / Mgz Kodu : 8990" gibi) basiyor;
+// bu bir sube/personel bilgisi olup sirket unvaninin parcasi degildir.
+const MAGAZA_KODU_RE = /MGZ\s*AD[Iİ]|MGZ\s*KOD/i;
 
 // Gercek firma adlari (orn. "LC Waikiki Mağazacılık Hiz. Tic. A.Ş.") bazen
 // karisik/kucuk harfle basiliyor, bu yuzden buyuk harf orani tek basina
@@ -388,9 +392,10 @@ function findFirma(lines) {
     if (!trimmed || trimmed.length < 3 || /^\d+$/.test(trimmed)) continue;
     // Adres/vergi/tarih iceren bir satirsa isim burada biter, arama durur.
     if (stopRe.test(trimmed)) break;
-    // Belge basligi ("E-Arşiv Fatura", "İkinci Kopya" vb.) veya karsilama
-    // ifadesi ("Teşekkürler" vb.) ise firma adinin parcasi degildir, atla.
-    if (DOCUMENT_HEADER_RE.test(trimmed) || GREETING_RE.test(trimmed) || looksLikeNoise(trimmed)) continue;
+    // Belge basligi ("E-Arşiv Fatura", "İkinci Kopya" vb.), karsilama
+    // ifadesi ("Teşekkürler" vb.) ya da magaza adi/kodu satiri ise firma
+    // adinin parcasi degildir, atla.
+    if (DOCUMENT_HEADER_RE.test(trimmed) || GREETING_RE.test(trimmed) || MAGAZA_KODU_RE.test(trimmed) || looksLikeNoise(trimmed)) continue;
     nameParts.push(trimmed);
     if (nameParts.length >= 3) break;
   }
