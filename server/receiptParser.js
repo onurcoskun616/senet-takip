@@ -239,9 +239,7 @@ function findTotalAndKdvSpatial(paragraphs) {
       continue;
     }
 
-    // Ayni paragrafta tutar yoksa en yakin "ciplak tutar" adayini ara:
-    // once ayni satirdakileri (topY yakin) soldan-saga mesafeye gore,
-    // yoksa dikey olarak en yakin satiri tercih ediyoruz.
+    // Ayni paragrafta tutar yoksa en yakin "ciplak tutar" adayini ara.
     let best = null;
     let bestScore = Infinity;
     for (const cand of amountCandidates) {
@@ -254,10 +252,7 @@ function findTotalAndKdvSpatial(paragraphs) {
       // isarettir: tum tutarlar zaten fişin ayni saga-hizali sutununda
       // basiliyor, dx farki sadece o sutun icinde hangi tutarin biraz
       // daha sola/saga oturdugunu gosterir - hangi ETIKETE ait oldugunu
-      // degil. Etiketler birbirine cok yakinsa (orn. TOPKDV/TOPLAM sadece
-      // birkac satir arayla) OCR'in bounding box'lari da hafifce kaymis
-      // olabiliyor; bu yuzden dy'yi agir basan tek bir puanla
-      // karsilastiriyoruz, "ayni satir" icin ayri bir esik kullanmadan.
+      // degil.
       const score = dy * 50 + dx;
       if (score < bestScore) {
         bestScore = score;
@@ -767,6 +762,23 @@ function parseReceiptText(rawText, paragraphs) {
   if (Object.keys(kdvKirilim).length === 0) {
     const inferred = inferSingleRateFromTotals(toplam, kdv);
     if (inferred) kdvKirilim = inferred;
+  }
+
+  // Fiş tek bir oran iceriyorsa (kirilimda tek anahtar varsa) ve bu oran
+  // guvenilir TOPLAM/TOPKDV ile matematiksel olarak tam uyuyorsa, o zaman
+  // fişin TAMAMI bu tek orana tabidir - dahil tutar TOPLAM'in kendisi
+  // olmali. Bu durumda kirilimi guvenilir toplam/kdv ile yeniden hesaplayip
+  // ustune yaziyoruz; boylece urun satirindan (yanlis siralamadan dolayi)
+  // kismen/yanlis okunmus bir dahil tutar (orn. TOPKDV'nin kendi tutarini
+  // yanlislikla urune ait sanip) TOPLAM'i degil BASKA bir sayiyi yansitmis
+  // olsa bile duzeltilmis olur.
+  const kirilimKeys = Object.keys(kdvKirilim);
+  if (kirilimKeys.length === 1 && toplam !== null && kdv !== null) {
+    const rate = Number(kirilimKeys[0]);
+    const expectedKdv = (toplam * rate) / (100 + rate);
+    if (Math.abs(kdv - expectedKdv) < 0.03) {
+      kdvKirilim = { [kirilimKeys[0]]: deriveFromDahil(rate, toplam) };
+    }
   }
 
   const firma = findFirma(lines);
