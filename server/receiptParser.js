@@ -184,16 +184,28 @@ function buildAmountCandidates(paragraphs) {
   for (const p of paragraphs) {
     const subLines = p.text.split('\n').filter((l) => l.trim());
     if (subLines.length <= 1) {
-      candidates.push({ text: p.text, topY: p.topY, leftX: p.leftX, parent: p });
+      candidates.push({ text: p.text, topY: p.topY, bottomY: p.bottomY ?? p.topY, leftX: p.leftX, parent: p });
       continue;
     }
     const span = (p.bottomY ?? p.topY) - p.topY;
     subLines.forEach((line, i) => {
       const topY = p.topY + (span * i) / (subLines.length - 1);
-      candidates.push({ text: line, topY, leftX: p.leftX, parent: p });
+      const bottomY = p.topY + (span * (i + 1)) / (subLines.length - 1);
+      candidates.push({ text: line, topY, bottomY, leftX: p.leftX, parent: p });
     });
   }
   return candidates;
+}
+
+// Bir paragraf/adayin topY-bottomY araliginin dikey orta noktasi. OCR
+// bazen ayni satirdaki etiket ile tutarin bounding box'larini birbirine
+// gore hafifce kaydirilmis (ust kenarlari farkli hizada) dondurebiliyor;
+// sadece topY karsilastirmak boyle durumlarda yanlis eslesmeye yol
+// acabiliyor. Orta nokta, glif yuksekligi farkliliklarina karsi daha
+// dayanikli bir referans noktasidir.
+function verticalMid(item) {
+  const bottom = item.bottomY ?? item.topY;
+  return (item.topY + bottom) / 2;
 }
 
 /**
@@ -236,18 +248,17 @@ function findTotalAndKdvSpatial(paragraphs) {
       if (cand.parent === label.p || consumed.has(cand)) continue;
       const amt = parseBareAmount(cand.text);
       if (amt === null) continue;
-      const dy = Math.abs(cand.topY - label.p.topY);
-      const dx = cand.leftX - label.p.leftX;
-      const sameRow = dy < 20;
-      // Ayni satirda birden fazla aday oldugunda (orn. TOPKDV ve TOPLAM
-      // etiketleri birbirine cok yakin - sadece ~20px - basilmis fişlerde),
-      // dikey yakinlik (dy) yatay uzakliktan (dx) cok daha guclu bir isaret:
-      // tum tutarlar zaten ayni saga-hizali sutunda oldugu icin dx farki
-      // sadece hangi tutarin biraz daha sola/saga oturdugunu gosterir,
-      // hangi ETIKETE ait oldugunu degil. Bu yuzden ayni-satir puanini da
-      // dy agirlikli hesaplayip, iki etiket ust uste yakinsa dogru
-      // eslesmenin kazanmasini sagliyoruz.
-      const score = sameRow ? dy * 1000 + Math.abs(dx) : 100000 + dy * 10 + Math.abs(dx);
+      const dy = Math.abs(verticalMid(cand) - verticalMid(label.p));
+      const dx = Math.abs(cand.leftX - label.p.leftX);
+      // Dikey yakinlik (dy), yatay mesafeden (dx) cok daha guclu bir
+      // isarettir: tum tutarlar zaten fişin ayni saga-hizali sutununda
+      // basiliyor, dx farki sadece o sutun icinde hangi tutarin biraz
+      // daha sola/saga oturdugunu gosterir - hangi ETIKETE ait oldugunu
+      // degil. Etiketler birbirine cok yakinsa (orn. TOPKDV/TOPLAM sadece
+      // birkac satir arayla) OCR'in bounding box'lari da hafifce kaymis
+      // olabiliyor; bu yuzden dy'yi agir basan tek bir puanla
+      // karsilastiriyoruz, "ayni satir" icin ayri bir esik kullanmadan.
+      const score = dy * 50 + dx;
       if (score < bestScore) {
         bestScore = score;
         best = { cand, amt };
@@ -694,6 +705,28 @@ function deriveFromDahil(rate, dahil) {
   };
 }
 
+/**
+ * Fişte hicbir KDV orani isareti (%1/%10/%20) metinde taninamadiginda
+ * (orn. tek kalemli bir fişte "%" isareti tamamen kaybolup geriye
+ * "20 * 205,00" gibi bir miktar ifadesinden ayirt edilemeyen ciplak bir
+ * sayi kaliyorsa) son care olarak, zaten guvenilir sekilde okunan
+ * TOPLAM/TOPKDV degerlerinin HANGI tek orana matematiksel olarak tam
+ * uydugunu kontrol eder. Metni tahmin etmek yerine saf aritmetik
+ * kullandigi icin (dahil = matrah + matrah*oran/100), bu digerlerinden
+ * daha guvenilir bir son caredir; uyum cok siki (0.03 TL) tutuluyor ki
+ * karisik/birden fazla oranli fişlerde yanlislikla bir oran secilmesin.
+ */
+function inferSingleRateFromTotals(toplam, kdv) {
+  if (toplam === null || kdv === null || toplam <= 0) return null;
+  for (const rate of KDV_RATES) {
+    const expectedKdv = (toplam * Number(rate)) / (100 + Number(rate));
+    if (Math.abs(kdv - expectedKdv) < 0.03) {
+      return { [rate]: deriveFromDahil(Number(rate), toplam) };
+    }
+  }
+  return null;
+}
+
 function parseReceiptText(rawText, paragraphs) {
   const lines = rawText
     .split('\n')
@@ -726,6 +759,14 @@ function parseReceiptText(rawText, paragraphs) {
       derived[rate] = deriveFromDahil(Number(rate), dahil);
     }
     if (Object.keys(derived).length > 0) kdvKirilim = derived;
+  }
+
+  // Hicbir oran isareti metinde bulunamadiysa (orn. tek kalemli bir fişte
+  // "%" isareti tamamen kaybolmussa), guvenilir TOPLAM/TOPKDV degerlerinin
+  // hangi tek orana matematiksel olarak uydugunu kontrol et.
+  if (Object.keys(kdvKirilim).length === 0) {
+    const inferred = inferSingleRateFromTotals(toplam, kdv);
+    if (inferred) kdvKirilim = inferred;
   }
 
   const firma = findFirma(lines);
