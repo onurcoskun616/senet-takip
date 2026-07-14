@@ -239,7 +239,15 @@ function findTotalAndKdvSpatial(paragraphs) {
       const dy = Math.abs(cand.topY - label.p.topY);
       const dx = cand.leftX - label.p.leftX;
       const sameRow = dy < 20;
-      const score = sameRow ? Math.abs(dx) : 100000 + dy * 10 + Math.abs(dx);
+      // Ayni satirda birden fazla aday oldugunda (orn. TOPKDV ve TOPLAM
+      // etiketleri birbirine cok yakin - sadece ~20px - basilmis fişlerde),
+      // dikey yakinlik (dy) yatay uzakliktan (dx) cok daha guclu bir isaret:
+      // tum tutarlar zaten ayni saga-hizali sutunda oldugu icin dx farki
+      // sadece hangi tutarin biraz daha sola/saga oturdugunu gosterir,
+      // hangi ETIKETE ait oldugunu degil. Bu yuzden ayni-satir puanini da
+      // dy agirlikli hesaplayip, iki etiket ust uste yakinsa dogru
+      // eslesmenin kazanmasini sagliyoruz.
+      const score = sameRow ? dy * 1000 + Math.abs(dx) : 100000 + dy * 10 + Math.abs(dx);
       if (score < bestScore) {
         bestScore = score;
         best = { cand, amt };
