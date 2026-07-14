@@ -14,6 +14,7 @@ const receiptsBody = document.getElementById('receiptsBody');
 const totalSummary = document.getElementById('totalSummary');
 const photoPreview = document.getElementById('photoPreview');
 const photoLink = document.getElementById('photoLink');
+const aiFallbackNote = document.getElementById('aiFallbackNote');
 
 let currentRawText = '';
 let currentFotoDosya = '';
@@ -113,6 +114,7 @@ function fillForm(fields) {
   } else {
     photoPreview.classList.add('hidden');
   }
+  aiFallbackNote.classList.toggle('hidden', !fields.aiDestekli);
   updateFisNoLabel();
   formSection.classList.remove('hidden');
 }
@@ -181,6 +183,7 @@ cancelBtn.addEventListener('click', async () => {
   updateFisNoLabel();
   currentFotoDosya = '';
   photoPreview.classList.add('hidden');
+  aiFallbackNote.classList.add('hidden');
 
   if (scanQueue.length > 0) {
     scanQueueIndex += 1;

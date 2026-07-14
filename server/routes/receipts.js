@@ -8,6 +8,7 @@ const { extractText } = require('../visionOcr');
 const { parseReceiptText } = require('../receiptParser');
 const { buildWorkbook } = require('../excelExport');
 const { buildReceiptPdf } = require('../documentBuilder');
+const { applyAiFallback } = require('../aiFallback');
 
 const router = express.Router();
 
@@ -74,10 +75,11 @@ router.post('/scan', upload.single('fis'), async (req, res) => {
     if (!rawText) {
       return res.status(422).json({ error: 'Fotoğrafta okunabilir bir metin bulunamadı. Daha net bir fotoğraf deneyin.' });
     }
-    const fields = parseReceiptText(rawText, paragraphs);
+    const parsedFields = parseReceiptText(rawText, paragraphs);
+    const { fields, aiDestekli } = await applyAiFallback(parsedFields, rawText);
     const pdfBuffer = await buildReceiptPdf(req.file.buffer, cropBox);
     const fotoDosya = saveDocument(pdfBuffer);
-    res.json({ fields: { ...fields, fotoDosya } });
+    res.json({ fields: { ...fields, fotoDosya, aiDestekli } });
   } catch (err) {
     console.error('OCR hatası:', err.message);
     res.status(500).json({ error: err.message });

@@ -153,6 +153,27 @@ Oranına Göre Kırılım" bölümüne ve Excel çıktısına ayrı sütunlar ol
 Fişte bu kırılım tablosu hiç yoksa (yalnızca tek bir toplam KDV varsa) ilgili
 alanlar boş kalır; bu normaldir, mevcut olmayan bir veri türetilmez.
 
+### Yedek Yapay Zeka Modeli (regex başarısız kaldığında)
+
+Regex tabanlı ayıklama, temel alanlardan (tarih, saat, firma, toplam, KDV,
+fiş no, ödeme yöntemi) birini bile bulamazsa, sistem otomatik olarak
+`server/aiFallback.js` üzerinden Claude Haiku 4.5 modelini yedek olarak
+devreye sokar; okunan ham OCR metnini modele gönderip yalnızca **eksik
+kalan** alanları tamamlatır — regex'in zaten bulduğu değerlere dokunulmaz.
+Form üzerinde bu durumda "🤖 Bazı alanlar ... yapay zeka modeliyle
+tamamlandı" notu görünür, böylece hangi fişlerin ekstra kontrol gerektirdiği
+belli olur.
+
+Bu katmanın çalışması için `.env` dosyasına bir `ANTHROPIC_API_KEY`
+eklemeniz gerekir (https://console.anthropic.com/settings/keys). Anahtar
+girilmezse yedek katman sessizce devre dışı kalır, sistem sorunsuz şekilde
+sadece regex ile çalışmaya devam eder.
+
+Maliyet çok düşüktür: yedek yalnızca regex'in başarısız olduğu fişlerde
+devreye girdiği için, 1000 fişin tamamı okunsa bile (hiçbiri regex'e takılmasa)
+maliyet ~$1-1.5 civarındadır; gerçekte sadece "yedeğe düşen" fiş oranına
+göre bunun bir kısmı ödenir.
+
 > Not: Uygulama bir PWA olduğu için telefonunuzda arayüz dosyaları (Service
 > Worker) önbelleğe alınır. Her deploy sonrası telefonda en güncel arayüzün
 > yüklendiğinden emin olmak için sayfayı birkaç saniye bekleyip yeniden
