@@ -10,6 +10,33 @@ const ENDPOINT = 'https://vision.googleapis.com/v1/images:annotate';
  * diger bloklari birlestiriyoruz; geri kalan uzak/kucuk bloklar
  * (fis disindaki nesneler) sonuca dahil edilmiyor.
  */
+// Verilen bloklarin (kendi boundingBox koseleri uzerinden) toplam
+// kapsayan dikdortgenini hesaplar. Bu, fotografta fisin kendisinin
+// (arka plandaki nesneler haric) kapladigi alani bulup, belge olarak
+// kaydedilirken fotografi bu alana kirpmak icin kullanilir.
+function boundingBoxFromBlocks(blocks) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const block of blocks) {
+    for (const v of block.boundingBox?.vertices || []) {
+      if (typeof v.x === 'number') {
+        minX = Math.min(minX, v.x);
+        maxX = Math.max(maxX, v.x);
+      }
+      if (typeof v.y === 'number') {
+        minY = Math.min(minY, v.y);
+        maxY = Math.max(maxY, v.y);
+      }
+    }
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+    return null;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
 function filterStrayBlocks(blocks) {
   const info = blocks
     .map((block) => {
@@ -28,7 +55,7 @@ function filterStrayBlocks(blocks) {
     })
     .filter((item) => item.charCount > 0);
 
-  if (info.length < 2) return blocks;
+  if (info.length < 2) return { blocks, cropBox: boundingBoxFromBlocks(blocks) };
 
   info.sort((a, b) => b.charCount - a.charCount);
 
@@ -51,7 +78,8 @@ function filterStrayBlocks(blocks) {
     }
   }
 
-  return info.filter((item) => included.has(item)).map((item) => item.block);
+  const kept = info.filter((item) => included.has(item)).map((item) => item.block);
+  return { blocks: kept, cropBox: boundingBoxFromBlocks(kept) };
 }
 
 /**
@@ -64,7 +92,7 @@ function filterStrayBlocks(blocks) {
  */
 function reconstructReadingOrder(page) {
   const paragraphs = [];
-  const blocks = filterStrayBlocks(page.blocks || []);
+  const { blocks, cropBox } = filterStrayBlocks(page.blocks || []);
 
   for (const block of blocks) {
     for (const paragraph of block.paragraphs || []) {
@@ -102,7 +130,7 @@ function reconstructReadingOrder(page) {
   });
 
   const nonEmpty = paragraphs.filter((p) => p.text);
-  return { text: nonEmpty.map((p) => p.text).join('\n'), paragraphs: nonEmpty };
+  return { text: nonEmpty.map((p) => p.text).join('\n'), paragraphs: nonEmpty, cropBox };
 }
 
 /**
@@ -153,7 +181,7 @@ async function extractText(imageBuffer) {
     if (reordered.text) return reordered;
   }
 
-  return { text: result?.fullTextAnnotation?.text || '', paragraphs: [] };
+  return { text: result?.fullTextAnnotation?.text || '', paragraphs: [], cropBox: null };
 }
 
 module.exports = { extractText };

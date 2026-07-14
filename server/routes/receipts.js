@@ -7,34 +7,26 @@ const db = require('../db');
 const { extractText } = require('../visionOcr');
 const { parseReceiptText } = require('../receiptParser');
 const { buildWorkbook } = require('../excelExport');
+const { buildReceiptPdf } = require('../documentBuilder');
 
 const router = express.Router();
 
 const KDV_RATE_FIELDS = ['1', '10', '20'];
 
-// Taranan fiş fotoğrafları burada saklanır (DATA_DIR altında, veritabanıyla
-// aynı kalıcı disk üzerinde olacak şekilde).
+// Taranan fişlerin kırpılmış PDF belgeleri burada saklanır (DATA_DIR
+// altında, veritabanıyla aynı kalıcı disk üzerinde olacak şekilde).
 const photosDir = path.join(db.dataDir, 'photos');
 if (!fs.existsSync(photosDir)) {
   fs.mkdirSync(photosDir, { recursive: true });
 }
 
-const MIME_EXTENSIONS = {
-  'image/jpeg': '.jpg',
-  'image/png': '.png',
-  'image/webp': '.webp',
-  'image/heic': '.heic',
-  'image/heif': '.heif',
-};
-
-function savePhoto(buffer, mimetype) {
-  const ext = MIME_EXTENSIONS[mimetype] || '.jpg';
-  const filename = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${ext}`;
+function saveDocument(buffer) {
+  const filename = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}.pdf`;
   fs.writeFileSync(path.join(photosDir, filename), buffer);
   return filename;
 }
 
-function deletePhoto(filename) {
+function deleteDocument(filename) {
   if (!filename) return;
   const filePath = path.join(photosDir, path.basename(filename));
   fs.unlink(filePath, () => {});
@@ -69,20 +61,22 @@ const upload = multer({
 });
 
 // Fiş fotoğrafını OCR'dan geçirip alanları çıkarır (henüz kaydetmez).
-// Fotoğrafın kendisi de diske kaydedilir; kullanıcı fişi kaydettiğinde
-// (POST /) bu dosya adı veritabanına yazılır, böylece sonradan tekrar
-// bakılabilir.
+// Fotoğraf, OCR sırasında tespit edilen fişin kendi alanına kırpılıp
+// (etrafındaki masa/arka plan atılıp) tek sayfalık bir PDF belgesi olarak
+// diske kaydedilir; kullanıcı fişi kaydettiğinde (POST /) bu dosya adı
+// veritabanına yazılır, böylece sonradan tekrar bakılabilir.
 router.post('/scan', upload.single('fis'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Fiş fotoğrafı yüklenmedi.' });
     }
-    const { text: rawText, paragraphs } = await extractText(req.file.buffer);
+    const { text: rawText, paragraphs, cropBox } = await extractText(req.file.buffer);
     if (!rawText) {
       return res.status(422).json({ error: 'Fotoğrafta okunabilir bir metin bulunamadı. Daha net bir fotoğraf deneyin.' });
     }
     const fields = parseReceiptText(rawText, paragraphs);
-    const fotoDosya = savePhoto(req.file.buffer, req.file.mimetype);
+    const pdfBuffer = await buildReceiptPdf(req.file.buffer, cropBox);
+    const fotoDosya = saveDocument(pdfBuffer);
     res.json({ fields: { ...fields, fotoDosya } });
   } catch (err) {
     console.error('OCR hatası:', err.message);
@@ -90,12 +84,12 @@ router.post('/scan', upload.single('fis'), async (req, res) => {
   }
 });
 
-// Bir fiş fotoğrafını görüntüler (Excel'deki bağlantı ve listedeki
-// önizleme için kullanılır).
+// Bir fişin taranmış belgesini (PDF) görüntüler (Excel'deki bağlantı ve
+// listedeki önizleme için kullanılır).
 router.get('/photos/:filename', (req, res) => {
   const filePath = path.join(photosDir, path.basename(req.params.filename));
   if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: 'Fotoğraf bulunamadı.' });
+    return res.status(404).json({ error: 'Belge bulunamadı.' });
   }
   res.sendFile(filePath);
 });
@@ -191,7 +185,7 @@ router.delete('/:id', (req, res) => {
   const existing = db.prepare('SELECT foto_dosya FROM receipts WHERE id = ?').get(req.params.id);
   const info = db.prepare('DELETE FROM receipts WHERE id = ?').run(req.params.id);
   if (info.changes === 0) return res.status(404).json({ error: 'Fiş bulunamadı.' });
-  deletePhoto(existing?.foto_dosya);
+  deleteDocument(existing?.foto_dosya);
   res.status(204).end();
 });
 

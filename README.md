@@ -11,7 +11,11 @@ okuyan ve tüm fişleri tek bir Excel dosyasında biriktiren bir sistem.
 3. Fotoğraf sunucuya yüklenir, Google Cloud Vision API ile fiş üzerindeki metin
    okunur, ardından tarih/firma/tutar/KDV gibi alanlar otomatik ayıklanır.
 4. Ayıklanan bilgiler ekranda gösterilir; OCR hatalarını düzeltip **Kaydet**
-   dersiniz. Kayıt yerel bir veritabanına (SQLite) eklenir.
+   dersiniz. Kayıt yerel bir veritabanına (SQLite) eklenir. Taranan fotoğraf,
+   fişin etrafındaki arka plan (masa, diğer nesneler vb.) otomatik olarak
+   kırpılıp yalnızca fişin kendisini içeren tek sayfalık bir PDF belgesi
+   olarak da saklanır; listedeki 📄 simgesinden veya Excel çıktısındaki
+   bağlantıdan bu belgeye ulaşabilirsiniz.
 5. İstediğiniz an **Excel İndir** düğmesiyle o ana kadarki tüm fişleri tek bir
    `.xlsx` dosyası olarak indirebilirsiniz (her fiş bir satır, toplamlar
    otomatik hesaplanır).

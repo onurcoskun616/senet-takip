@@ -363,7 +363,7 @@ function renderReceipts(rows) {
       <td>${escapeHtml(r.belge_turu) || 'Fiş'}</td>
       <td>${escapeHtml(r.fis_no) || '-'}</td>
       <td>${escapeHtml(r.kategori) || '-'}</td>
-      <td>${r.foto_dosya ? `<a href="/api/receipts/photos/${encodeURIComponent(r.foto_dosya)}" target="_blank" rel="noopener" title="Fotoğrafı Gör">📷</a>` : ''}</td>
+      <td>${r.foto_dosya ? `<a href="/api/receipts/photos/${encodeURIComponent(r.foto_dosya)}" target="_blank" rel="noopener" title="Belgeyi Gör (PDF)">📄</a>` : ''}</td>
       <td><button class="btn-edit" data-id="${r.id}" title="Düzenle">✏️</button></td>
       <td><button class="btn-delete" data-id="${r.id}" title="Sil">🗑</button></td>
     `;
