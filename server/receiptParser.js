@@ -434,11 +434,12 @@ const AMOUNT_TOKEN_RE = new RegExp(AMOUNT_VALUE_RE, 'g');
 
 // OCR bazen "%" isaretini "2" rakamiyla karistirip yapistiriyor: "%20" ->
 // "220", "%1." -> "21.", "%10" -> "210" gibi (gercek "%" karakteri hic
-// gorunmuyor). Bu, farkli taramalarda tekrarlayan, tahmin edilebilir bir
-// OCR hatasi oldugu icin, gercek "%" bulunamazsa bu "cakisik" deseni son
-// care olarak deniyoruz.
-const CORRUPTED_PERCENT_LOOKUP = { 21: '1', 210: '10', 220: '20' };
-const CORRUPTED_PERCENT_RE = /\b(21|210|220)\b/;
+// gorunmuyor). Bazi fişlerde %1 orani "01" olarak (bastaki sifirla)
+// basiliyor, bu da corrupted halde "201" oluyor. Bu, farkli taramalarda
+// tekrarlayan, tahmin edilebilir bir OCR hatasi oldugu icin, gercek "%"
+// bulunamazsa bu "cakisik" deseni son care olarak deniyoruz.
+const CORRUPTED_PERCENT_LOOKUP = { 21: '1', 201: '1', 210: '10', 220: '20' };
+const CORRUPTED_PERCENT_RE = /\b(21|201|210|220)\b/;
 // OCR bazen "%" isaretini "X" ya da "Z" harfiyle de karistirabiliyor: "%20"
 // -> "X20" (orn. "MIGROS PLASTIK POSET X20") ya da "%10" -> "Z10" (orn.
 // "VICCO BAG 34*45 BÜYÜ Z10 *10,00") gibi, hatta "%1" -> "XI" gibi (rakam
@@ -451,7 +452,12 @@ const CORRUPTED_X_LOOKUP = { 1: '1', 10: '10', 20: '20', i: '1' };
 
 function matchKdvRate(line) {
   const real = line.match(/%\s*(\d{1,2})\b/);
-  if (real && KDV_RATES.includes(real[1])) return real[1];
+  if (real) {
+    // Bazi fişlerde oran bastaki sifirla basiliyor (orn. "%01"); KDV_RATES
+    // listesiyle karsilastirmadan once bu sifiri temizliyoruz.
+    const normalized = String(Number(real[1]));
+    if (KDV_RATES.includes(normalized)) return normalized;
+  }
   const corrupted = line.match(CORRUPTED_PERCENT_RE);
   if (corrupted && CORRUPTED_PERCENT_LOOKUP[corrupted[1]]) return CORRUPTED_PERCENT_LOOKUP[corrupted[1]];
   const xCorrupted = line.match(CORRUPTED_X_PERCENT_RE);
