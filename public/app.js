@@ -148,12 +148,34 @@ cancelBtn.addEventListener('click', () => {
   photoPreview.classList.add('hidden');
 });
 
+// Ayni Fiş No + Firma + Tarih ile zaten kayitli bir fis olup olmadigini
+// kontrol eder (duzenlenmekte olan kaydin kendisi haric). Yalnizca
+// ucunun de dolu oldugu durumlarda kontrol eder, aksi halde bos
+// alanlar rastgele eslesip yanlis uyari verebilir.
+function findDuplicate(payload) {
+  if (!payload.fisNo || !payload.firma || !payload.tarih) return null;
+  return receiptsCache.find((r) =>
+    r.id !== editingId &&
+    (r.fis_no || '') === payload.fisNo &&
+    (r.firma || '').trim() === payload.firma.trim() &&
+    (r.tarih || '') === payload.tarih
+  ) || null;
+}
+
 receiptForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const formData = new FormData(receiptForm);
   const payload = Object.fromEntries(formData.entries());
   payload.hamMetin = currentRawText;
   payload.fotoDosya = currentFotoDosya;
+
+  const duplicate = findDuplicate(payload);
+  if (duplicate) {
+    const proceed = confirm(
+      `Bu fiş zaten kayıtlı görünüyor:\n${duplicate.tarih} · ${duplicate.firma} · Fiş No: ${duplicate.fis_no}\n\nYine de kaydetmek istiyor musunuz?`
+    );
+    if (!proceed) return;
+  }
 
   const url = editingId ? `/api/receipts/${editingId}` : '/api/receipts';
   const method = editingId ? 'PUT' : 'POST';
