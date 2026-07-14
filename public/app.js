@@ -1,4 +1,5 @@
 const fileInput = document.getElementById('fileInput');
+const batchFileInput = document.getElementById('batchFileInput');
 const statusSection = document.getElementById('statusSection');
 const statusText = document.getElementById('statusText');
 const formSection = document.getElementById('formSection');
@@ -18,6 +19,8 @@ let currentRawText = '';
 let currentFotoDosya = '';
 let editingId = null;
 let receiptsCache = [];
+let scanQueue = [];
+let scanQueueIndex = 0;
 
 // Kaydedilmis bir fis (DB'den, snake_case alan adlariyla) ile OCR
 // tarama sonucu (camelCase) ayni forma doldurulabilsin diye ceviri yapar.
@@ -114,12 +117,26 @@ function fillForm(fields) {
   formSection.classList.remove('hidden');
 }
 
-fileInput.addEventListener('change', async () => {
-  const file = fileInput.files[0];
-  if (!file) return;
+// Kuyruktaki fotograflar bittiginde form baslik/ipucunu normale dondurur.
+function updateBatchProgress() {
+  if (scanQueue.length > 1) {
+    formHint.textContent = `OCR ile okunan bilgileri kontrol edip gerekirse düzeltin, sonra kaydedin. (Fiş ${scanQueueIndex + 1} / ${scanQueue.length})`;
+  }
+}
 
+// Kuyrukta sirada bekleyen bir sonraki fotografi tarar; hicbir sey
+// kalmadiysa kuyrugu temizler ve formu kapatir.
+async function scanNextInQueue() {
+  if (scanQueueIndex >= scanQueue.length) {
+    scanQueue = [];
+    scanQueueIndex = 0;
+    formSection.classList.add('hidden');
+    return;
+  }
+
+  const file = scanQueue[scanQueueIndex];
   resetFormMode();
-  showStatus('Fiş okunuyor, lütfen bekleyin...');
+  showStatus(`Fiş okunuyor, lütfen bekleyin... (${scanQueueIndex + 1}/${scanQueue.length})`);
 
   const formData = new FormData();
   formData.append('fis', file);
@@ -131,21 +148,46 @@ fileInput.addEventListener('change', async () => {
 
     hideStatus();
     fillForm(data.fields);
+    updateBatchProgress();
   } catch (err) {
     hideStatus();
-    alert('Hata: ' + err.message);
-  } finally {
-    fileInput.value = '';
+    alert(`Hata (${scanQueueIndex + 1}/${scanQueue.length}): ${err.message}`);
+    scanQueueIndex += 1;
+    await scanNextInQueue();
   }
+}
+
+function handleFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  scanQueue = files;
+  scanQueueIndex = 0;
+  scanNextInQueue();
+}
+
+fileInput.addEventListener('change', () => {
+  handleFiles(fileInput.files);
+  fileInput.value = '';
 });
 
-cancelBtn.addEventListener('click', () => {
-  formSection.classList.add('hidden');
+batchFileInput.addEventListener('change', () => {
+  handleFiles(batchFileInput.files);
+  batchFileInput.value = '';
+});
+
+cancelBtn.addEventListener('click', async () => {
   receiptForm.reset();
   resetFormMode();
   updateFisNoLabel();
   currentFotoDosya = '';
   photoPreview.classList.add('hidden');
+
+  if (scanQueue.length > 0) {
+    scanQueueIndex += 1;
+    await scanNextInQueue();
+    return;
+  }
+  formSection.classList.add('hidden');
 });
 
 // Ayni Fiş No + Firma + Tarih ile zaten kayitli bir fis olup olmadigini
@@ -193,8 +235,14 @@ receiptForm.addEventListener('submit', async (e) => {
     receiptForm.reset();
     resetFormMode();
     updateFisNoLabel();
-    formSection.classList.add('hidden');
     await loadReceipts();
+
+    if (scanQueue.length > 0) {
+      scanQueueIndex += 1;
+      await scanNextInQueue();
+      return;
+    }
+    formSection.classList.add('hidden');
   } catch (err) {
     alert('Hata: ' + err.message);
   }

@@ -16,6 +16,10 @@ okuyan ve tüm fişleri tek bir Excel dosyasında biriktiren bir sistem.
    `.xlsx` dosyası olarak indirebilirsiniz (her fiş bir satır, toplamlar
    otomatik hesaplanır).
 
+> İpucu: Birden fazla fişiniz varsa **"Birden Fazla Fiş Seç"** düğmesiyle
+> galeriden hepsini birden seçebilirsiniz; sistem her birini sırayla okuyup
+> tek tek onayınıza sunar, kaydettikçe otomatik olarak bir sonrakine geçer.
+
 ## Mimari
 
 ```

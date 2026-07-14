@@ -21,7 +21,12 @@
         📷 Fiş Tara
       </label>
       <input type="file" id="fileInput" accept="image/*" capture="environment" hidden />
-      <p class="hint">Fişi düz bir zemine koyup net bir fotoğraf çekin. Tüm fiş kadraja sığsın.</p>
+      <label for="batchFileInput" class="btn btn-outline btn-large">
+        🗂 Birden Fazla Fiş Seç
+      </label>
+      <input type="file" id="batchFileInput" accept="image/*" multiple hidden />
+      <p class="hint">Fişi düz bir zemine koyup net bir fotoğraf çekin. Tüm fiş kadraja sığsın.
+      Birden fazla fişiniz varsa önce fotoğraflarını çekip galeriden hepsini birden seçebilir, sonra sırayla kontrol edip kaydedebilirsiniz.</p>
     </section>
 
     <section id="statusSection" class="status-section hidden">
