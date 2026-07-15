@@ -153,26 +153,36 @@ Oranına Göre Kırılım" bölümüne ve Excel çıktısına ayrı sütunlar ol
 Fişte bu kırılım tablosu hiç yoksa (yalnızca tek bir toplam KDV varsa) ilgili
 alanlar boş kalır; bu normaldir, mevcut olmayan bir veri türetilmez.
 
-### Yedek Yapay Zeka Modeli (regex başarısız kaldığında)
+### Yedek Yapay Zeka Modeli (regex başarısız/belirsiz kaldığında)
 
-Regex tabanlı ayıklama, temel alanlardan (tarih, saat, firma, toplam, KDV,
-fiş no, ödeme yöntemi) birini bile bulamazsa, sistem otomatik olarak
-`server/aiFallback.js` üzerinden Claude Haiku 4.5 modelini yedek olarak
-devreye sokar; okunan ham OCR metnini modele gönderip yalnızca **eksik
-kalan** alanları tamamlatır — regex'in zaten bulduğu değerlere dokunulmaz.
-Form üzerinde bu durumda "🤖 Bazı alanlar ... yapay zeka modeliyle
-tamamlandı" notu görünür, böylece hangi fişlerin ekstra kontrol gerektirdiği
-belli olur.
+Regex tabanlı ayıklama iki durumda otomatik olarak `server/aiFallback.js`
+üzerinden Claude Haiku 4.5'i yedek olarak devreye sokar:
+
+1. **Eksik** — temel alanlardan (tarih, saat, firma, toplam, KDV, fiş no,
+   ödeme yöntemi) biri hiç bulunamamışsa.
+2. **Şüpheli** — regex bir değer bulmuş ama `receiptParser.js` içindeki
+   `findAmbiguousFields` aritmetik tutarlılık kontrolünden geçememişse
+   (örn. KDV, toplamdan büyük çıkmış — TOPLAM/TOPKDV yer değiştirmiş
+   olabilir; KDV kırılım tablosunun toplamı genel toplamla uyuşmuyor;
+   tarih gelecekte veya geçersiz).
+
+Şüpheli durumda sadece OCR metni değil, fişin **kırpılmış fotoğrafı da**
+modele gönderilir; OCR metninin satır sırası/eşleşmesi hatalı olsa bile
+model görseldeki gerçek yerleşimi esas alıp doğru değeri belirlemeye
+çalışır. Regex'in tutarlı bulduğu değerlere hiçbir durumda dokunulmaz.
+
+Form üzerinde bu durumda "🤖 Şu alanlar ... tamamlandı/düzeltildi" notu,
+hangi alanların etkilendiğini adlarıyla birlikte gösterir.
 
 Bu katmanın çalışması için `.env` dosyasına bir `ANTHROPIC_API_KEY`
 eklemeniz gerekir (https://console.anthropic.com/settings/keys). Anahtar
 girilmezse yedek katman sessizce devre dışı kalır, sistem sorunsuz şekilde
 sadece regex ile çalışmaya devam eder.
 
-Maliyet çok düşüktür: yedek yalnızca regex'in başarısız olduğu fişlerde
-devreye girdiği için, 1000 fişin tamamı okunsa bile (hiçbiri regex'e takılmasa)
-maliyet ~$1-1.5 civarındadır; gerçekte sadece "yedeğe düşen" fiş oranına
-göre bunun bir kısmı ödenir.
+Maliyet: yalnızca eksik/şüpheli fişlerde devreye girdiği için genel
+maliyet düşüktür; ancak görsel içeren çağrılar (şüpheli durum) salt metin
+çağrılarına göre biraz daha maliyetlidir (fotoğrafın çözünürlüğüne bağlı
+olarak ek görsel token'ı eklenir).
 
 > Not: Uygulama bir PWA olduğu için telefonunuzda arayüz dosyaları (Service
 > Worker) önbelleğe alınır. Her deploy sonrası telefonda en güncel arayüzün

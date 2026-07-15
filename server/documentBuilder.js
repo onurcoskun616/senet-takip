@@ -67,4 +67,4 @@ async function buildReceiptPdf(imageBuffer, cropBox) {
   return imageToPdf(buffer, width, height);
 }
 
-module.exports = { buildReceiptPdf };
+module.exports = { buildReceiptPdf, cropToReceipt, imageToPdf };

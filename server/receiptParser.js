@@ -808,4 +808,74 @@ function parseReceiptText(rawText, paragraphs) {
   };
 }
 
-module.exports = { parseReceiptText, parseAmount };
+// Regex/spatial eslesme bir deger BULMUS olsa bile, o deger aritmetik
+// olarak sacma/tutarsizsa (orn. TOPLAM/TOPKDV'nin yer degistirmis olmasi,
+// kirilim toplaminin genel toplamla uyusmamasi) ilgili alani "supheli"
+// isaretler. Bu, "regex hic bulamadi" durumunun aksine "regex bir sey
+// buldu ama yanlis olabilir" durumunu yakalamak icin kullanilir - yedek
+// yapay zeka katmani sadece eksik degil, supheli alanlar icin de devreye
+// girsin diye.
+function findAmbiguousFields(fields) {
+  const suspicious = new Set();
+  const { toplam, kdv } = fields;
+
+  if (toplam !== null && toplam <= 0) suspicious.add('toplam');
+  if (kdv !== null && kdv < 0) suspicious.add('kdv');
+
+  if (toplam !== null && kdv !== null && toplam > 0) {
+    if (kdv > toplam) {
+      // KDV, toplamdan buyuk olamaz - TOPLAM/TOPKDV yer degistirmis olabilir.
+      suspicious.add('toplam');
+      suspicious.add('kdv');
+    } else {
+      const hasBreakdown = KDV_RATES.some((r) => fields[`kdv${r}`] !== null && fields[`kdv${r}`] !== undefined);
+      if (!hasBreakdown && kdv > 0) {
+        // Kirilim tablosu yoksa (tek bir toplam KDV varsa), KDV'nin toplam
+        // icindeki orani bilinen oranlardan (%1/%10/%20) hicbirine
+        // yakin degilse degerler supheli sayilir.
+        const tolerance = Math.max(0.5, toplam * 0.02);
+        const matchesAnyRate = KDV_RATES.some((rate) => {
+          const expectedKdv = (toplam * Number(rate)) / (100 + Number(rate));
+          return Math.abs(kdv - expectedKdv) < tolerance;
+        });
+        if (!matchesAnyRate) {
+          suspicious.add('toplam');
+          suspicious.add('kdv');
+        }
+      }
+    }
+  }
+
+  const breakdownExists = KDV_RATES.some((r) => fields[`toplam${r}`] !== null && fields[`toplam${r}`] !== undefined);
+  if (breakdownExists) {
+    const breakdownToplam = KDV_RATES.reduce((sum, r) => sum + (fields[`toplam${r}`] || 0), 0);
+    const breakdownKdv = KDV_RATES.reduce((sum, r) => sum + (fields[`kdv${r}`] || 0), 0);
+    if (toplam !== null && Math.abs(breakdownToplam - toplam) > Math.max(0.5, toplam * 0.02)) {
+      suspicious.add('toplam');
+    }
+    if (kdv !== null && Math.abs(breakdownKdv - kdv) > Math.max(0.1, kdv * 0.05)) {
+      suspicious.add('kdv');
+    }
+  }
+
+  if (fields.tarih) {
+    const m = fields.tarih.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+    if (!m) {
+      suspicious.add('tarih');
+    } else {
+      const day = Number(m[1]);
+      const month = Number(m[2]);
+      const year = Number(m[3]);
+      if (month < 1 || month > 12 || day < 1 || day > 31 || year < 2000) {
+        suspicious.add('tarih');
+      } else {
+        const date = new Date(year, month - 1, day);
+        if (date.getTime() > Date.now() + 24 * 60 * 60 * 1000) suspicious.add('tarih');
+      }
+    }
+  }
+
+  return Array.from(suspicious);
+}
+
+module.exports = { parseReceiptText, parseAmount, findAmbiguousFields };
