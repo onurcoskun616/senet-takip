@@ -458,15 +458,23 @@ const AMOUNT_TOKEN_RE = new RegExp(AMOUNT_VALUE_RE, 'g');
 // tekrarlayan, tahmin edilebilir bir OCR hatasi oldugu icin, gercek "%"
 // bulunamazsa bu "cakisik" deseni son care olarak deniyoruz.
 const CORRUPTED_PERCENT_LOOKUP = { 21: '1', 201: '1', 210: '10', 220: '20' };
-const CORRUPTED_PERCENT_RE = /\b(21|201|210|220)\b/;
+// Negatif lookahead: eslesen rakam dizisinin hemen ardindan (bosluk sonrasi
+// degil, BITISIK) bir ondalik ayiraci + rakam gelmemeli. Bu olmadan, orn.
+// "220,64" gibi bir TUTARIN kendisi (KDV Dahil Tutar sutunu) - "%" isareti
+// OCR tarafindan kaybolup satirda ciplak bir oran rakami ("1") kalmissa -
+// yanlislikla "220" corrupted "%20" isareti sanilip oran hatali (%1 yerine
+// %20) okunuyordu. Gercek corrupted oran isaretinden sonra boyle bitisik
+// bir ondalik gelmez (tutar ayri bir token/bosluktan sonra gelir).
+const CORRUPTED_PERCENT_RE = /\b(21|201|210|220)\b(?![.,]\d)/;
 // OCR bazen "%" isaretini "X" ya da "Z" harfiyle de karistirabiliyor: "%20"
 // -> "X20" (orn. "MIGROS PLASTIK POSET X20") ya da "%10" -> "Z10" (orn.
 // "VICCO BAG 34*45 BÜYÜ Z10 *10,00") gibi, hatta "%1" -> "XI" gibi (rakam
 // "1" de Romen rakami "I" ile karisiyor). Bunu miktar ifadelerinden
 // ("2 x 20,00" gibi bosluklu carpimlardan) ayirt etmek icin harfin hemen
 // ardindan bosluksuz oran rakami gelmesini sartkoşuyoruz - gercek carpim
-// ifadelerinde X/Z ile sayi arasinda daima bosluk olur.
-const CORRUPTED_X_PERCENT_RE = /\b[XZ](1|10|20|I)\b/i;
+// ifadelerinde X/Z ile sayi arasinda daima bosluk olur. Ayni "bitisik
+// ondalik tutar" yanlis-pozitifine karsi burada da ayni lookahead uygulanir.
+const CORRUPTED_X_PERCENT_RE = /\b[XZ](1|10|20|I)\b(?![.,]\d)/i;
 const CORRUPTED_X_LOOKUP = { 1: '1', 10: '10', 20: '20', i: '1' };
 
 function matchKdvRate(line) {

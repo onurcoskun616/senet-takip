@@ -83,6 +83,36 @@ test('parseReceiptText - "%" isaretinin rakama karisip bozulmus hali ("201") tan
   assert.equal(fields.kdv1, 0.1);
 });
 
+test('parseReceiptText - kirilim satirinda "%" isareti kaybolup ciplak bir rakam ("1") tutarin ("220,64") hemen yaninda kaldiginda, tutarin kendisi ("220") yanlislikla corrupted "%20" isareti sanilmaz', () => {
+  // Gercek senaryo (Happy Center/Altun Gida fisi): urun satirlarinda "%01"
+  // dogru okunuyor ama ayri KDV kirilim tablosundaki oran hucresinin "%"
+  // isareti OCR tarafindan kayboluyor, geriye ciplak "1" kaliyor. Bu satir
+  // "1 *220,64 *2,18" haline geliyor - "220,64" tutarinin icindeki "220"
+  // yanlislikla corrupted "%20" isareti sanilip kirilim %1 yerine %20'ye
+  // yazilabiliyordu (bkz. CORRUPTED_PERCENT_RE'deki bitisik-ondalik lookahead).
+  const raw = [
+    'ALTUN GIDA A.S.',
+    'Ornek Mah. Test Sok. No:20',
+    '15.07.2026',
+    'MNV.SOGAN KURU KG %01 *83,14',
+    'ERİKLİ 10 LT SU P %01 *137,50',
+    'TOPKDV *2,18',
+    'TOPLAM *220,64',
+    'KDV Oranı KDV Dahil Tutar KDV',
+    '1 *220,64 *2,18',
+    'FİŞ NO : 0446',
+    'KREDİ KARTI',
+  ].join('\n');
+
+  const fields = parseReceiptText(raw);
+  assert.equal(fields.toplam, 220.64);
+  assert.equal(fields.kdv, 2.18);
+  assert.equal(fields.toplam1, 220.64);
+  assert.equal(fields.kdv1, 2.18);
+  assert.equal(fields.toplam20, null);
+  assert.equal(fields.kdv20, null);
+});
+
 test('parseReceiptText - tek kalemli fişte kirilim tablosu yoksa ve urun satirindan hesaplanan tutar guvenilir TOPLAM ile celisiyorsa, guvenilir TOPLAM/TOPKDV esas alinir', () => {
   const raw = [
     'FUNIDO TEKNOLOJI A.S.',
