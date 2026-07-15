@@ -24,6 +24,31 @@ okuyan ve tüm fişleri tek bir Excel dosyasında biriktiren bir sistem.
 > galeriden hepsini birden seçebilirsiniz; sistem her birini sırayla okuyup
 > tek tek onayınıza sunar, kaydettikçe otomatik olarak bir sonrakine geçer.
 
+## Diğer Özellikler
+
+- **Şifre koruması** — bkz. "Şifre Koruması" bölümü.
+- **Bütçe/limit uyarısı** — Özet bölümündeki "Bütçe Ayarlarını Düzenle" ile
+  kategori bazında aylık bütçe belirleyebilirsiniz; bu ay o kategoride
+  harcamanız bütçeyi aşarsa çubuk kırmızıya döner ve ⚠️ ile uyarılırsınız
+  (tarayıcınızda/localStorage'da tutulur, cihaza özeldir).
+- **Tam metin arama** — filtre çubuğundaki "Ürün/Ham Metin" kutusu, kalemler
+  ve okunan ham OCR metni içinde arama yapar (örn. bir ürünü hangi fişte
+  aldığınızı bulmak için).
+- **Sayfalama** — fiş listesi 25'erli sayfalara bölünür, performansı korur.
+- **Yedekleme/İçe aktarma** — "Yedek İndir (JSON)" ile tüm fişlerinizi tek bir
+  dosyada indirebilir, "Yedekten Geri Yükle" ile aynı dosyayı (veya başka bir
+  kurulumdan alınan yedeği) mevcut kayıtlara ekleyebilirsiniz (üzerine
+  yazmaz). Not: PDF belgeleri bu yedeğe dahil değildir, sadece dosya adı
+  referansı taşınır.
+- **Garanti süresi takibi** — fişe opsiyonel bir "Garanti Bitiş Tarihi"
+  girebilirsiniz; listede son 30 gün içinde bitecek garantiler ⏰ sarı,
+  geçmiş garantiler ⏰ kırmızı rozetle işaretlenir.
+- **Çevrimdışı kuyruk** — kaydetme sırasında ağ hatası (sunucuya hiç
+  ulaşılamaması) olursa kayıt kaybolmaz, sayfa açık kaldığı sürece kuyruğa
+  alınıp bağlantı geri gelince otomatik gönderilir.
+- **Karanlık mod** — sistem temanıza otomatik uyar; sağ üstteki 🌙/☀️
+  düğmesiyle manuel de değiştirebilirsiniz (tercihiniz hatırlanır).
+
 ## Mimari
 
 ```
@@ -114,7 +139,11 @@ projeyi ücretsiz Render.com üzerinde yayınlayabilirsiniz:
    ekleyin (https://console.anthropic.com/settings/keys). Eklemezseniz
    sistem sorunsuz çalışmaya devam eder, sadece regex başarısız/şüpheli
    kaldığında alanlar boş/hatalı kalabilir.
-5. Deploy tamamlanınca size `https://<servis-adi>.onrender.com` şeklinde
+5. **(Şiddetle önerilir)** Uygulama public bir linkte yayınlanacağı için
+   `APP_PASSWORD` değişkenini de ekleyip bir şifre belirleyin — aksi
+   halde linki bilen/tahmin eden herkes tüm fişlerinizi görebilir.
+   Aşağıdaki "Şifre Koruması" bölümüne bakın.
+6. Deploy tamamlanınca size `https://<servis-adi>.onrender.com` şeklinde
    sabit bir link verir; bunu telefonunuzdan doğrudan açabilirsiniz.
 
 > Not: Render'ın ücretsiz planında disk kalıcı değildir — her yeniden
@@ -138,6 +167,17 @@ kayıtlarınız silinmez:
 `DATA_DIR` boş bırakılırsa (varsayılan), proje kendi `data/` klasörünü
 kullanır — yerel geliştirme için yeterlidir ama Render'ın ücretsiz
 planında kalıcı değildir.
+
+### Şifre Koruması
+
+Uygulama tüm fişlerinizi/finansal verilerinizi tek bir linkte tutuyor;
+`.env` dosyasına (veya Render'ın Environment sekmesine) bir `APP_PASSWORD`
+eklerseniz tarayıcı ilk açılışta basit bir kullanıcı adı/şifre penceresi
+gösterir (HTTP Basic Auth) — kullanıcı adı önemsenmez, sadece girdiğiniz
+şifre kontrol edilir. `APP_PASSWORD` boş bırakılırsa (varsayılan) uygulama
+korumasız çalışır; **linki herkese açık bir yerde (Render vb.) yayınlıyorsanız
+bunu ayarlamanız şiddetle önerilir**, aksi halde linki bilen/tahmin eden
+herkes tüm kayıtlarınızı görebilir.
 
 ## Fiş Ayrıştırma Hakkında
 
@@ -206,9 +246,12 @@ olarak ek görsel token'ı eklenir).
 | PUT    | `/api/receipts/:id`        | Bir fişi günceller                          |
 | DELETE | `/api/receipts/:id`        | Bir fişi siler                              |
 | GET    | `/api/receipts/export/excel` | Tüm fişleri tek bir `.xlsx` dosyası olarak indirir |
+| GET    | `/api/receipts/export/json` | Tüm fişleri tek bir `.json` yedek dosyası olarak indirir |
+| POST   | `/api/receipts/import/json` | Bir `.json` yedeğini mevcut kayıtlara ekler (üzerine yazmaz) |
 
 ## Geliştirme
 
 ```bash
 npm run dev   # dosya degisikliklerinde otomatik yeniden baslatir
+npm test      # receiptParser.js icin regresyon testlerini calistirir
 ```

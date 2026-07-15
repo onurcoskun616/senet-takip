@@ -12,10 +12,15 @@
 <body>
   <header class="app-header">
     <h1>🧾 Fiş Tarama Sistemi</h1>
-    <button id="exportBtn" class="btn btn-outline">Excel İndir</button>
+    <div class="header-actions">
+      <button id="themeToggleBtn" class="btn btn-outline" title="Karanlık/Aydınlık mod">🌙</button>
+      <button id="exportBtn" class="btn btn-outline">Excel İndir</button>
+    </div>
   </header>
 
   <main>
+    <div id="offlineIndicator" class="offline-indicator hidden"></div>
+
     <section class="scan-section">
       <label for="fileInput" class="btn btn-primary btn-large">
         📷 Fiş Tara
@@ -115,6 +120,7 @@
             <option>Diğer</option>
           </select>
         </label>
+        <label>Garanti Bitiş Tarihi (opsiyonel)<input type="date" name="garantiBitis" /></label>
         <label>Notlar<textarea name="notlar" rows="2"></textarea></label>
 
         <details class="raw-text-details">
@@ -140,10 +146,16 @@
         <h2>Kayıtlı Fişler</h2>
         <span id="totalSummary" class="total-summary"></span>
       </div>
+      <div class="backup-bar">
+        <button type="button" id="backupExportBtn" class="btn btn-outline">💾 Yedek İndir (JSON)</button>
+        <label for="backupImportInput" class="btn btn-outline">📤 Yedekten Geri Yükle</label>
+        <input type="file" id="backupImportInput" accept="application/json" hidden />
+      </div>
       <div class="filter-bar">
         <label>Başlangıç<input type="date" id="filterStart" /></label>
         <label>Bitiş<input type="date" id="filterEnd" /></label>
         <label>Firma<input type="text" id="filterFirma" placeholder="Firma ara..." /></label>
+        <label>Ürün/Ham Metin<input type="text" id="filterText" placeholder="Ürün adı ara..." /></label>
         <label>Kategori
           <select id="filterKategori">
             <option value="">Tümü</option>
@@ -168,6 +180,7 @@
               <th>Belge Türü</th>
               <th>Fiş/Fatura No</th>
               <th>Kategori</th>
+              <th>Garanti</th>
               <th></th>
               <th></th>
               <th></th>
@@ -175,6 +188,11 @@
           </thead>
           <tbody id="receiptsBody"></tbody>
         </table>
+      </div>
+      <div id="pager" class="pager hidden">
+        <button type="button" id="pagerPrev" class="btn btn-outline">‹ Önceki</button>
+        <span id="pagerInfo"></span>
+        <button type="button" id="pagerNext" class="btn btn-outline">Sonraki ›</button>
       </div>
     </section>
 
@@ -184,6 +202,14 @@
       <div id="categorySummary" class="summary-bars"></div>
       <h3>Aylık Toplamlar</h3>
       <div id="monthlySummary" class="summary-bars"></div>
+
+      <h3>Bütçe Durumu <span class="hint">(bu ay, kategoriye göre)</span></h3>
+      <div id="budgetStatus" class="summary-bars"></div>
+      <details class="budget-settings">
+        <summary>Bütçe Ayarlarını Düzenle</summary>
+        <div id="budgetInputs" class="budget-input-list"></div>
+        <button type="button" id="saveBudgetsBtn" class="btn btn-outline">Bütçeleri Kaydet</button>
+      </details>
     </section>
   </main>
 

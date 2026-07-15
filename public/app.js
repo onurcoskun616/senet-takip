@@ -1,3 +1,32 @@
+// --- Karanlik mod ---
+// Varsayilan olarak sistem tercihine (prefers-color-scheme) uyulur (CSS
+// tarafinda @media ile); kullanici manuel bir tercih yaparsa (localStorage)
+// bu tercih sistem ayarinin onune gecer ve <html data-theme="..."> ile
+// uygulanir.
+const THEME_STORAGE_KEY = 'senetTakipTema';
+const themeToggleBtn = document.getElementById('themeToggleBtn');
+
+function applyTheme(theme) {
+  if (theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
+  const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const effectiveDark = theme ? theme === 'dark' : systemDark;
+  themeToggleBtn.textContent = effectiveDark ? '☀️' : '🌙';
+}
+
+applyTheme(localStorage.getItem(THEME_STORAGE_KEY));
+
+themeToggleBtn.addEventListener('click', () => {
+  const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const current = localStorage.getItem(THEME_STORAGE_KEY) || (systemDark ? 'dark' : 'light');
+  const next = current === 'dark' ? 'light' : 'dark';
+  localStorage.setItem(THEME_STORAGE_KEY, next);
+  applyTheme(next);
+});
+
 const fileInput = document.getElementById('fileInput');
 const batchFileInput = document.getElementById('batchFileInput');
 const statusSection = document.getElementById('statusSection');
@@ -15,6 +44,7 @@ const totalSummary = document.getElementById('totalSummary');
 const photoPreview = document.getElementById('photoPreview');
 const photoLink = document.getElementById('photoLink');
 const aiFallbackNote = document.getElementById('aiFallbackNote');
+const offlineIndicator = document.getElementById('offlineIndicator');
 
 let currentRawText = '';
 let currentFotoDosya = '';
@@ -22,6 +52,54 @@ let editingId = null;
 let receiptsCache = [];
 let scanQueue = [];
 let scanQueueIndex = 0;
+
+// --- Cevrimdisi kuyruk ---
+// Sayfa acikken kisa sureli baglanti kesintilerinde (orn. magazada zayif
+// sinyal) bir kayit kaybolmasin diye, ag hatasi (sunucuya hic ulasamama -
+// sunucunun hata donmesinden farkli) durumunda kaydetme islemi kuyruga
+// alinip baglanti geri gelince otomatik tekrar denenir. Kuyruk yalnizca bu
+// sekme acikken hafizada tutulur; sayfa kapatilir/yenilenirse kaybolur -
+// gunler sonrasina kalici kuyruklama icin IndexedDB + Background Sync API
+// gerekir ki iOS Safari bunu desteklemiyor, bu yuzden bilincli olarak bu
+// daha basit (ama daha genis tarayici destegine sahip) yaklasim secildi.
+const offlineQueue = [];
+
+function isNetworkError(err) {
+  return err instanceof TypeError;
+}
+
+function updateOfflineIndicator() {
+  if (offlineQueue.length > 0) {
+    const cokluEk = offlineQueue.length > 1 ? ` (+${offlineQueue.length - 1} tane daha)` : '';
+    offlineIndicator.textContent = `🔌 Bağlantı sorunu: "${offlineQueue[0].description}" kaydı bekliyor${cokluEk}. Bağlantı gelince otomatik gönderilecek.`;
+    offlineIndicator.classList.remove('hidden');
+  } else {
+    offlineIndicator.classList.add('hidden');
+  }
+}
+
+function queueOfflineTask(description, task) {
+  offlineQueue.push({ description, task });
+  updateOfflineIndicator();
+}
+
+async function drainOfflineQueue() {
+  while (offlineQueue.length > 0 && navigator.onLine) {
+    const item = offlineQueue[0];
+    try {
+      await item.task();
+      offlineQueue.shift();
+      updateOfflineIndicator();
+    } catch (err) {
+      if (isNetworkError(err)) break; // hala baglanti yok, daha sonra tekrar denenecek
+      offlineQueue.shift();
+      updateOfflineIndicator();
+      alert(`Kuyruktaki işlem başarısız oldu (${item.description}): ${err.message}`);
+    }
+  }
+}
+
+window.addEventListener('online', drainOfflineQueue);
 
 // Kaydedilmis bir fis (DB'den, snake_case alan adlariyla) ile OCR
 // tarama sonucu (camelCase) ayni forma doldurulabilsin diye ceviri yapar.
@@ -41,6 +119,7 @@ function dbRowToFields(r) {
     notlar: r.notlar,
     hamMetin: r.ham_metin,
     fotoDosya: r.foto_dosya,
+    garantiBitis: r.garanti_bitis,
   };
   for (const rate of ['1', '10', '20']) {
     fields[`toplam${rate}`] = r[`toplam_${rate}`];
@@ -104,6 +183,7 @@ function fillForm(fields) {
     receiptForm[`kdv${rate}`].value = fields[`kdv${rate}`] ?? '';
   }
   receiptForm.kategori.value = fields.kategori || '';
+  receiptForm.garantiBitis.value = fields.garantiBitis || '';
   receiptForm.notlar.value = fields.notlar || '';
   currentRawText = fields.hamMetin || '';
   rawTextEl.textContent = currentRawText;
@@ -236,7 +316,7 @@ receiptForm.addEventListener('submit', async (e) => {
   const url = editingId ? `/api/receipts/${editingId}` : '/api/receipts';
   const method = editingId ? 'PUT' : 'POST';
 
-  try {
+  const performSave = async () => {
     const res = await fetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
@@ -246,24 +326,80 @@ receiptForm.addEventListener('submit', async (e) => {
       const data = await res.json();
       throw new Error(data.error || 'Kaydedilemedi.');
     }
+  };
+
+  const resetAndAdvance = async () => {
     receiptForm.reset();
     resetFormMode();
     updateFisNoLabel();
-    await loadReceipts();
-
     if (scanQueue.length > 0) {
       scanQueueIndex += 1;
       await scanNextInQueue();
       return;
     }
     formSection.classList.add('hidden');
+  };
+
+  try {
+    await performSave();
+    await loadReceipts();
+    await resetAndAdvance();
   } catch (err) {
-    alert('Hata: ' + err.message);
+    if (isNetworkError(err)) {
+      queueOfflineTask(`${payload.firma || 'İsimsiz'} - ${payload.tarih || 'tarihsiz'}`, async () => {
+        await performSave();
+        await loadReceipts();
+      });
+      alert('Bağlantı sorunu tespit edildi. Bu kayıt, bağlantı geri geldiğinde otomatik olarak gönderilecek.');
+      await resetAndAdvance();
+    } else {
+      alert('Hata: ' + err.message);
+    }
   }
 });
 
 exportBtn.addEventListener('click', () => {
   window.location.href = '/api/receipts/export/excel';
+});
+
+// --- Yedekleme / Ice aktarma ---
+const backupExportBtn = document.getElementById('backupExportBtn');
+const backupImportInput = document.getElementById('backupImportInput');
+
+backupExportBtn.addEventListener('click', () => {
+  window.location.href = '/api/receipts/export/json';
+});
+
+backupImportInput.addEventListener('change', async () => {
+  const file = backupImportInput.files[0];
+  backupImportInput.value = '';
+  if (!file) return;
+
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    const count = Array.isArray(data.receipts) ? data.receipts.length : 0;
+    if (!count) {
+      alert('Bu dosyada geri yüklenecek bir fiş bulunamadı.');
+      return;
+    }
+    const proceed = confirm(
+      `Bu yedek dosyasında ${count} fiş var. Bunlar mevcut kayıtlarınıza EKLENECEK (üzerine yazılmaz). Devam edilsin mi?`
+    );
+    if (!proceed) return;
+
+    const res = await fetch('/api/receipts/import/json', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: text,
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Geri yükleme başarısız oldu.');
+    alert(`${result.inserted} fiş başarıyla geri yüklendi.`);
+    await loadReceipts();
+  } catch (err) {
+    alert('Hata: ' + err.message);
+  }
 });
 
 function formatMoney(n) {
@@ -277,9 +413,32 @@ function escapeHtml(value) {
   return div.innerHTML;
 }
 
+// Garanti bitis tarihi <input type="date"> formatinda (YYYY-MM-DD)
+// saklanir; bugune gore gecmis/yaklasan/uzak durumuna gore rozet basar.
+const GARANTI_YAKLASIYOR_GUN = 30;
+function formatGarantiBadge(garantiBitis) {
+  if (!garantiBitis) return '-';
+  const bitisTarihi = new Date(`${garantiBitis}T00:00:00`);
+  if (Number.isNaN(bitisTarihi.getTime())) return '-';
+
+  const bugun = new Date();
+  bugun.setHours(0, 0, 0, 0);
+  const gunFarki = Math.round((bitisTarihi - bugun) / (24 * 60 * 60 * 1000));
+  const tarihMetni = bitisTarihi.toLocaleDateString('tr-TR');
+
+  if (gunFarki < 0) {
+    return `<span class="garanti-badge garanti-badge--bitti" title="Garanti ${tarihMetni} tarihinde bitti">⏰ Bitti</span>`;
+  }
+  if (gunFarki <= GARANTI_YAKLASIYOR_GUN) {
+    return `<span class="garanti-badge garanti-badge--yaklasiyor" title="Garanti ${tarihMetni} tarihinde bitiyor (${gunFarki} gün kaldı)">⏰ ${gunFarki} gün</span>`;
+  }
+  return `<span title="Garanti ${tarihMetni} tarihinde bitiyor">${tarihMetni}</span>`;
+}
+
 const filterStart = document.getElementById('filterStart');
 const filterEnd = document.getElementById('filterEnd');
 const filterFirma = document.getElementById('filterFirma');
+const filterText = document.getElementById('filterText');
 const filterKategori = document.getElementById('filterKategori');
 const filterClear = document.getElementById('filterClear');
 
@@ -295,6 +454,12 @@ function passesFilters(r) {
   const firmaQuery = filterFirma.value.trim().toLocaleLowerCase('tr');
   if (firmaQuery && !(r.firma || '').toLocaleLowerCase('tr').includes(firmaQuery)) return false;
   if (filterKategori.value && r.kategori !== filterKategori.value) return false;
+
+  const textQuery = filterText.value.trim().toLocaleLowerCase('tr');
+  if (textQuery) {
+    const haystack = `${r.kalemler || ''} ${r.ham_metin || ''}`.toLocaleLowerCase('tr');
+    if (!haystack.includes(textQuery)) return false;
+  }
 
   const tarih = parseTarihToDate(r.tarih);
   if (filterStart.value) {
@@ -361,13 +526,118 @@ function renderSummary(rows) {
   renderBarList(monthlySummaryEl, monthEntries);
 }
 
+// --- Butce/limit uyarisi ---
+// Butceler tarayicida (localStorage) tutulur; sunucu tarafinda bir
+// degisiklik gerektirmez, kullaniciya ozel bir ayar oldugu icin bu yeterli.
+const BUDGET_STORAGE_KEY = 'senetTakipButceler';
+const BUDGET_KATEGORILERI = ['Gıda', 'Giyim', 'Ulaşım', 'Ofis Malzemesi', 'Fatura', 'Diğer'];
+
+function loadBudgets() {
+  try {
+    return JSON.parse(localStorage.getItem(BUDGET_STORAGE_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+
+function saveBudgets(budgets) {
+  localStorage.setItem(BUDGET_STORAGE_KEY, JSON.stringify(budgets));
+}
+
+const budgetStatusEl = document.getElementById('budgetStatus');
+const budgetInputsEl = document.getElementById('budgetInputs');
+const saveBudgetsBtn = document.getElementById('saveBudgetsBtn');
+
+function populateBudgetInputs() {
+  const budgets = loadBudgets();
+  budgetInputsEl.innerHTML = '';
+  for (const kategori of BUDGET_KATEGORILERI) {
+    const label = document.createElement('label');
+    label.innerHTML = `${escapeHtml(kategori)}<input type="number" step="0.01" min="0" data-kategori="${escapeHtml(kategori)}" placeholder="Sınırsız" />`;
+    label.querySelector('input').value = budgets[kategori] ?? '';
+    budgetInputsEl.appendChild(label);
+  }
+}
+
+saveBudgetsBtn.addEventListener('click', () => {
+  const budgets = {};
+  budgetInputsEl.querySelectorAll('input[data-kategori]').forEach((input) => {
+    const value = Number(input.value);
+    if (input.value !== '' && value > 0) budgets[input.dataset.kategori] = value;
+  });
+  saveBudgets(budgets);
+  renderBudgetStatus();
+});
+
+// Aktif filtrelerden bagimsiz olarak, HER ZAMAN icinde bulunulan ayin
+// kategori bazinda harcamasini hesaplar - butce, "bu ay ne kadar
+// harcadim" sorusuna cevap verdigi icin liste filtresine bagli olmamali.
+function computeCurrentMonthByKategori() {
+  const now = new Date();
+  const byKategori = {};
+  for (const r of receiptsCache) {
+    const tarih = parseTarihToDate(r.tarih);
+    if (!tarih || tarih.getFullYear() !== now.getFullYear() || tarih.getMonth() !== now.getMonth()) continue;
+    const kategori = r.kategori || 'Belirtilmemiş';
+    byKategori[kategori] = (byKategori[kategori] || 0) + (Number(r.toplam) || 0);
+  }
+  return byKategori;
+}
+
+function renderBudgetStatus() {
+  const budgets = loadBudgets();
+  const spendByKategori = computeCurrentMonthByKategori();
+  const kategoriler = Object.keys(budgets).filter((k) => budgets[k] > 0);
+
+  budgetStatusEl.innerHTML = '';
+  if (!kategoriler.length) {
+    budgetStatusEl.innerHTML = '<p class="summary-empty">Henüz bütçe belirlenmemiş. Aşağıdan "Bütçe Ayarlarını Düzenle" ile ekleyebilirsiniz.</p>';
+    return;
+  }
+
+  for (const kategori of kategoriler) {
+    const spent = spendByKategori[kategori] || 0;
+    const limit = budgets[kategori];
+    const pct = Math.min(100, (spent / limit) * 100);
+    const over = spent > limit;
+    const row = document.createElement('div');
+    row.className = 'summary-bar-row';
+    row.innerHTML = `
+      <span class="summary-bar-label" title="${escapeHtml(kategori)}">${escapeHtml(kategori)}${over ? ' ⚠️' : ''}</span>
+      <span class="summary-bar-track"><span class="summary-bar-fill${over ? ' summary-bar-fill--over' : ''}" style="width:${pct}%"></span></span>
+      <span class="summary-bar-value">${formatMoney(spent)} / ${formatMoney(limit)}</span>
+    `;
+    budgetStatusEl.appendChild(row);
+  }
+}
+
+populateBudgetInputs();
+
+// --- Sayfalama ---
+// Fis sayisi arttikca tum listeyi tek seferde DOM'a basmak yavaslar; bu
+// yuzden filtrelenmis sonuc sayfalara bolunup sadece aktif sayfa render edilir.
+const PAGE_SIZE = 25;
+let currentPage = 1;
+const pager = document.getElementById('pager');
+const pagerInfo = document.getElementById('pagerInfo');
+const pagerPrev = document.getElementById('pagerPrev');
+const pagerNext = document.getElementById('pagerNext');
+
 function renderReceipts(rows) {
   renderSummary(rows);
+  renderBudgetStatus();
   receiptsBody.innerHTML = '';
   let total = 0;
-
   for (const r of rows) {
     total += Number(r.toplam) || 0;
+  }
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  if (currentPage > totalPages) currentPage = totalPages;
+  if (currentPage < 1) currentPage = 1;
+  const pageRows = rows.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  for (const r of pageRows) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${escapeHtml(r.tarih) || '-'}</td>
@@ -377,6 +647,7 @@ function renderReceipts(rows) {
       <td>${escapeHtml(r.belge_turu) || 'Fiş'}</td>
       <td>${escapeHtml(r.fis_no) || '-'}</td>
       <td>${escapeHtml(r.kategori) || '-'}</td>
+      <td>${formatGarantiBadge(r.garanti_bitis)}</td>
       <td>${r.foto_dosya ? `<a href="/api/receipts/photos/${encodeURIComponent(r.foto_dosya)}" target="_blank" rel="noopener" title="Belgeyi Gör (PDF)">📄</a>` : ''}</td>
       <td><button class="btn-edit" data-id="${r.id}" title="Düzenle">✏️</button></td>
       <td><button class="btn-delete" data-id="${r.id}" title="Sil">🗑</button></td>
@@ -386,6 +657,11 @@ function renderReceipts(rows) {
 
   const suffix = rows.length !== receiptsCache.length ? ` (${receiptsCache.length} kayıttan filtrelendi)` : '';
   totalSummary.textContent = rows.length ? `${rows.length} fiş · Toplam: ${formatMoney(total)}${suffix}` : (receiptsCache.length ? 'Filtreyle eşleşen fiş yok' : '');
+
+  pager.classList.toggle('hidden', totalPages <= 1);
+  pagerInfo.textContent = `Sayfa ${currentPage} / ${totalPages}`;
+  pagerPrev.disabled = currentPage <= 1;
+  pagerNext.disabled = currentPage >= totalPages;
 
   document.querySelectorAll('.btn-edit').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -409,17 +685,28 @@ function renderReceipts(rows) {
 }
 
 function applyFilters() {
+  currentPage = 1;
   renderReceipts(receiptsCache.filter(passesFilters));
 }
 
 [filterStart, filterEnd, filterKategori].forEach((el) => el.addEventListener('change', applyFilters));
-filterFirma.addEventListener('input', applyFilters);
+[filterFirma, filterText].forEach((el) => el.addEventListener('input', applyFilters));
 filterClear.addEventListener('click', () => {
   filterStart.value = '';
   filterEnd.value = '';
   filterFirma.value = '';
+  filterText.value = '';
   filterKategori.value = '';
   applyFilters();
+});
+
+pagerPrev.addEventListener('click', () => {
+  currentPage -= 1;
+  renderReceipts(receiptsCache.filter(passesFilters));
+});
+pagerNext.addEventListener('click', () => {
+  currentPage += 1;
+  renderReceipts(receiptsCache.filter(passesFilters));
 });
 
 async function loadReceipts() {

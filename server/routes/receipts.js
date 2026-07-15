@@ -99,17 +99,17 @@ router.get('/photos/:filename', (req, res) => {
 
 // Kullanıcının onayladığı/düzelttiği fiş bilgilerini kaydeder.
 router.post('/', (req, res) => {
-  const { tarih, saat, firma, toplam, kdv, odemeYontemi, fisNo, belgeTuru, kategori, notlar, kalemler, kdvDetay, hamMetin, fotoDosya } = req.body;
+  const { tarih, saat, firma, toplam, kdv, odemeYontemi, fisNo, belgeTuru, kategori, notlar, kalemler, kdvDetay, hamMetin, fotoDosya, garantiBitis } = req.body;
   const kdvRateFields = extractKdvRateFields(req.body);
 
   const stmt = db.prepare(`
     INSERT INTO receipts (
       tarih, saat, firma, toplam, kdv, odeme_yontemi, fis_no, belge_turu, kategori, notlar, kalemler, kdv_detay,
-      toplam_1, matrah_1, kdv_1, toplam_10, matrah_10, kdv_10, toplam_20, matrah_20, kdv_20, ham_metin, foto_dosya
+      toplam_1, matrah_1, kdv_1, toplam_10, matrah_10, kdv_10, toplam_20, matrah_20, kdv_20, ham_metin, foto_dosya, garanti_bitis
     )
     VALUES (
       @tarih, @saat, @firma, @toplam, @kdv, @odeme_yontemi, @fis_no, @belge_turu, @kategori, @notlar, @kalemler, @kdv_detay,
-      @toplam_1, @matrah_1, @kdv_1, @toplam_10, @matrah_10, @kdv_10, @toplam_20, @matrah_20, @kdv_20, @ham_metin, @foto_dosya
+      @toplam_1, @matrah_1, @kdv_1, @toplam_10, @matrah_10, @kdv_10, @toplam_20, @matrah_20, @kdv_20, @ham_metin, @foto_dosya, @garanti_bitis
     )
   `);
 
@@ -129,6 +129,7 @@ router.post('/', (req, res) => {
     ...kdvRateFields,
     ham_metin: hamMetin || null,
     foto_dosya: fotoDosya || null,
+    garanti_bitis: garantiBitis || null,
   });
 
   const created = db.prepare('SELECT * FROM receipts WHERE id = ?').get(info.lastInsertRowid);
@@ -143,7 +144,7 @@ router.get('/', (req, res) => {
 
 // Tek bir fişi günceller (OCR hatalarını manuel düzeltmek için).
 router.put('/:id', (req, res) => {
-  const { tarih, saat, firma, toplam, kdv, odemeYontemi, fisNo, belgeTuru, kategori, notlar, kalemler, kdvDetay, fotoDosya } = req.body;
+  const { tarih, saat, firma, toplam, kdv, odemeYontemi, fisNo, belgeTuru, kategori, notlar, kalemler, kdvDetay, fotoDosya, garantiBitis } = req.body;
   const kdvRateFields = extractKdvRateFields(req.body);
 
   const existing = db.prepare('SELECT * FROM receipts WHERE id = ?').get(req.params.id);
@@ -158,7 +159,7 @@ router.put('/:id', (req, res) => {
       toplam_1 = @toplam_1, matrah_1 = @matrah_1, kdv_1 = @kdv_1,
       toplam_10 = @toplam_10, matrah_10 = @matrah_10, kdv_10 = @kdv_10,
       toplam_20 = @toplam_20, matrah_20 = @matrah_20, kdv_20 = @kdv_20,
-      foto_dosya = @foto_dosya
+      foto_dosya = @foto_dosya, garanti_bitis = @garanti_bitis
     WHERE id = @id
   `).run({
     id: req.params.id,
@@ -177,6 +178,7 @@ router.put('/:id', (req, res) => {
     ...kdvRateFields,
     // Duzenleme sirasinda fotograf yeniden taranmadiysa mevcut dosyayi koru.
     foto_dosya: fotoDosya !== undefined ? fotoDosya || null : existing.foto_dosya,
+    garanti_bitis: garantiBitis || null,
   });
 
   const updated = db.prepare('SELECT * FROM receipts WHERE id = ?').get(req.params.id);
@@ -208,6 +210,75 @@ router.get('/export/excel', async (req, res) => {
     console.error('Excel export hatası:', err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+// Tum fisleri JSON formatinda tam yedek olarak indirir (geri yukleme icin).
+// Not: Taranan PDF belgeleri (fotograflar) bu yedege dahil degildir, sadece
+// dosya adi referansi tasinir - aynı diskte geri yuklerseniz calisir.
+router.get('/export/json', (req, res) => {
+  const rows = db.prepare('SELECT * FROM receipts ORDER BY id ASC').all();
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="fisler_yedek_${new Date().toISOString().slice(0, 10)}.json"`);
+  res.json({ version: 1, exportedAt: new Date().toISOString(), receipts: rows });
+});
+
+// Daha once /export/json ile alinmis bir yedegi geri yukler. Var olan
+// kayitlara EKLENIR (id'ler yeniden atanir) - hicbir kayit silinmez/uzerine
+// yazilmaz, bu yuzden yanlislikla iki kez yuklemek veri kaybina yol acmaz
+// (sadece kayitlar tekrarlanir, kullanici fark edip silebilir).
+router.post('/import/json', (req, res) => {
+  const receipts = Array.isArray(req.body?.receipts) ? req.body.receipts : null;
+  if (!receipts) {
+    return res.status(400).json({ error: 'Geçersiz yedek dosyası: "receipts" dizisi bulunamadı.' });
+  }
+
+  const insert = db.prepare(`
+    INSERT INTO receipts (
+      tarih, saat, firma, toplam, kdv, odeme_yontemi, fis_no, belge_turu, kategori, notlar, kalemler, kdv_detay,
+      toplam_1, matrah_1, kdv_1, toplam_10, matrah_10, kdv_10, toplam_20, matrah_20, kdv_20, ham_metin, foto_dosya, garanti_bitis
+    )
+    VALUES (
+      @tarih, @saat, @firma, @toplam, @kdv, @odeme_yontemi, @fis_no, @belge_turu, @kategori, @notlar, @kalemler, @kdv_detay,
+      @toplam_1, @matrah_1, @kdv_1, @toplam_10, @matrah_10, @kdv_10, @toplam_20, @matrah_20, @kdv_20, @ham_metin, @foto_dosya, @garanti_bitis
+    )
+  `);
+
+  const insertMany = db.transaction((items) => {
+    let count = 0;
+    for (const item of items) {
+      insert.run({
+        tarih: item.tarih || null,
+        saat: item.saat || null,
+        firma: item.firma || null,
+        toplam: toNumberOrNull(item.toplam),
+        kdv: toNumberOrNull(item.kdv),
+        odeme_yontemi: item.odeme_yontemi || null,
+        fis_no: item.fis_no || null,
+        belge_turu: item.belge_turu || null,
+        kategori: item.kategori || null,
+        notlar: item.notlar || null,
+        kalemler: item.kalemler || null,
+        kdv_detay: item.kdv_detay || null,
+        toplam_1: toNumberOrNull(item.toplam_1),
+        matrah_1: toNumberOrNull(item.matrah_1),
+        kdv_1: toNumberOrNull(item.kdv_1),
+        toplam_10: toNumberOrNull(item.toplam_10),
+        matrah_10: toNumberOrNull(item.matrah_10),
+        kdv_10: toNumberOrNull(item.kdv_10),
+        toplam_20: toNumberOrNull(item.toplam_20),
+        matrah_20: toNumberOrNull(item.matrah_20),
+        kdv_20: toNumberOrNull(item.kdv_20),
+        ham_metin: item.ham_metin || null,
+        foto_dosya: item.foto_dosya || null,
+        garanti_bitis: item.garanti_bitis || null,
+      });
+      count += 1;
+    }
+    return count;
+  });
+
+  const inserted = insertMany(receipts);
+  res.json({ inserted });
 });
 
 module.exports = router;

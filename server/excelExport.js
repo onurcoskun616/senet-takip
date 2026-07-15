@@ -24,6 +24,7 @@ const COLUMNS = [
   { header: 'KDV %10', key: 'kdv_10', width: 12 },
   { header: 'KDV %20', key: 'kdv_20', width: 12 },
   { header: 'Kategori', key: 'kategori', width: 16 },
+  { header: 'Garanti Bitiş Tarihi', key: 'garanti_bitis', width: 16 },
   { header: 'Notlar', key: 'notlar', width: 26 },
   { header: 'Fiş Belgesi (PDF)', key: 'foto_dosya', width: 20 },
   { header: 'Eklenme Tarihi', key: 'created_at', width: 20 },

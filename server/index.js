@@ -2,10 +2,16 @@ require('dotenv').config();
 const path = require('path');
 const express = require('express');
 const receiptsRouter = require('./routes/receipts');
+const { basicAuthMiddleware } = require('./authMiddleware');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+if (!process.env.APP_PASSWORD) {
+  console.warn('UYARI: APP_PASSWORD ayarlanmadı - uygulama şifre koruması olmadan çalışıyor.');
+}
+
+app.use(basicAuthMiddleware);
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
