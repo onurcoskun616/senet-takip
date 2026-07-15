@@ -116,8 +116,12 @@ function fillForm(fields) {
   }
   if (fields.aiDestekli && fields.aiAlanlar && fields.aiAlanlar.length) {
     const labels = { tarih: 'Tarih', saat: 'Saat', firma: 'Firma', toplam: 'Toplam', kdv: 'KDV', fisNo: 'Fiş No', odemeYontemi: 'Ödeme Yöntemi' };
-    const alanlar = fields.aiAlanlar.map((k) => labels[k] || k).join(', ');
-    aiFallbackNote.textContent = `🤖 Şu alanlar OCR yerine yedek yapay zeka modeliyle tamamlandı/düzeltildi, lütfen kontrol edin: ${alanlar}`;
+    const sebepler = fields.aiSebepler || {};
+    const satirlar = fields.aiAlanlar.map((k) => {
+      const sebep = sebepler[k];
+      return sebep ? `${labels[k] || k} (${sebep})` : (labels[k] || k);
+    }).join(', ');
+    aiFallbackNote.textContent = `🤖 Şu alanlar OCR yerine yedek yapay zeka modeliyle tamamlandı/düzeltildi, lütfen kontrol edin: ${satirlar}`;
     aiFallbackNote.classList.remove('hidden');
   } else {
     aiFallbackNote.classList.add('hidden');

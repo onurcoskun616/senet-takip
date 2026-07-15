@@ -13,6 +13,8 @@ const { findAmbiguousFields } = require('./receiptParser');
 // dokunulmaz.
 
 const MODEL = 'claude-haiku-4-5';
+const MAX_RETRIES = 2;
+const RETRY_BASE_DELAY_MS = 500;
 
 const CORE_FIELDS = ['tarih', 'saat', 'firma', 'toplam', 'kdv', 'fisNo', 'odemeYontemi'];
 
@@ -63,6 +65,36 @@ function isMissing(value) {
   return value === null || value === undefined || value === '';
 }
 
+function isRetryable(err) {
+  return (
+    err instanceof Anthropic.RateLimitError ||
+    err instanceof Anthropic.InternalServerError ||
+    // TS SDK'da APIConnectionError, APIError'un alt sinifi - once bunu kontrol et.
+    err instanceof Anthropic.APIConnectionError
+  );
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Gecici hatalarda (rate limit, 5xx, ag baglanti sorunu) katlanarak
+// artan bekleme ile yeniden dener; kalici hatalarda (400/401 vb.) hemen
+// vazgecer.
+async function createWithRetry(anthropic, params) {
+  let lastErr;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await anthropic.messages.create(params);
+    } catch (err) {
+      lastErr = err;
+      if (!isRetryable(err) || attempt === MAX_RETRIES) throw err;
+      await sleep(RETRY_BASE_DELAY_MS * 2 ** attempt);
+    }
+  }
+  throw lastErr;
+}
+
 async function extractFieldsWithAI(rawText, imageBuffer) {
   const anthropic = getClient();
   if (!anthropic) return null;
@@ -82,7 +114,7 @@ async function extractFieldsWithAI(rawText, imageBuffer) {
   });
 
   try {
-    const response = await anthropic.messages.create({
+    const response = await createWithRetry(anthropic, {
       model: MODEL,
       max_tokens: 512,
       system: buildSystemPrompt(Boolean(imageBuffer)),
@@ -101,29 +133,34 @@ async function extractFieldsWithAI(rawText, imageBuffer) {
 // Regex sonuclarinda eksik kalan veya supheli (aritmetik olarak tutarsiz)
 // CORE_FIELDS alanlarini, gerekirse AI yedegiyle (goruntu varsa gorsel
 // karsilastirmayla) tamamlar/duzeltir. Regex'in tutarli buldugu alanlara
-// dokunmaz.
+// dokunmaz. Donen aiSebepler, kullaniciya "neden supheliydi" gostermek
+// icin dokunulan her alanin gerekcesini tasir.
 async function applyAiFallback(fields, rawText, imageBuffer) {
   const missingFields = CORE_FIELDS.filter((key) => isMissing(fields[key]));
-  const suspiciousFields = findAmbiguousFields(fields).filter((key) => CORE_FIELDS.includes(key));
+  const ambiguous = findAmbiguousFields(fields).filter((item) => CORE_FIELDS.includes(item.field));
+  const suspiciousFields = ambiguous.map((item) => item.field);
+  const reasonByField = new Map(ambiguous.map((item) => [item.field, item.reason]));
 
   if (missingFields.length === 0 && suspiciousFields.length === 0) {
-    return { fields, aiDestekli: false, aiAlanlar: [] };
+    return { fields, aiDestekli: false, aiAlanlar: [], aiSebepler: {} };
   }
 
   const aiFields = await extractFieldsWithAI(rawText, imageBuffer);
   if (!aiFields) {
-    return { fields, aiDestekli: false, aiAlanlar: [] };
+    return { fields, aiDestekli: false, aiAlanlar: [], aiSebepler: {} };
   }
 
   const merged = { ...fields };
   const touched = [];
+  const sebepler = {};
   for (const key of new Set([...missingFields, ...suspiciousFields])) {
     if (!isMissing(aiFields[key]) && aiFields[key] !== merged[key]) {
       merged[key] = aiFields[key];
       touched.push(key);
+      sebepler[key] = reasonByField.get(key) || 'OCR bu alanı okuyamadı';
     }
   }
-  return { fields: merged, aiDestekli: touched.length > 0, aiAlanlar: touched };
+  return { fields: merged, aiDestekli: touched.length > 0, aiAlanlar: touched, aiSebepler: sebepler };
 }
 
 module.exports = { applyAiFallback };

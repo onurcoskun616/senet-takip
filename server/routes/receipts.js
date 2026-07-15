@@ -77,10 +77,10 @@ router.post('/scan', upload.single('fis'), async (req, res) => {
     }
     const parsedFields = parseReceiptText(rawText, paragraphs);
     const { buffer: croppedImage, width, height } = await cropToReceipt(req.file.buffer, cropBox);
-    const { fields, aiDestekli, aiAlanlar } = await applyAiFallback(parsedFields, rawText, croppedImage);
+    const { fields, aiDestekli, aiAlanlar, aiSebepler } = await applyAiFallback(parsedFields, rawText, croppedImage);
     const pdfBuffer = await imageToPdf(croppedImage, width, height);
     const fotoDosya = saveDocument(pdfBuffer);
-    res.json({ fields: { ...fields, fotoDosya, aiDestekli, aiAlanlar } });
+    res.json({ fields: { ...fields, fotoDosya, aiDestekli, aiAlanlar, aiSebepler } });
   } catch (err) {
     console.error('OCR hatası:', err.message);
     res.status(500).json({ error: err.message });

@@ -814,19 +814,25 @@ function parseReceiptText(rawText, paragraphs) {
 // isaretler. Bu, "regex hic bulamadi" durumunun aksine "regex bir sey
 // buldu ama yanlis olabilir" durumunu yakalamak icin kullanilir - yedek
 // yapay zeka katmani sadece eksik degil, supheli alanlar icin de devreye
-// girsin diye.
+// girsin diye. Donus degeri [{ field, reason }] - reason kullaniciya
+// "neden supheli" gosterebilmek icin.
 function findAmbiguousFields(fields) {
-  const suspicious = new Set();
+  const reasons = new Map();
+  const flag = (field, reason) => {
+    if (!reasons.has(field)) reasons.set(field, new Set());
+    reasons.get(field).add(reason);
+  };
+
   const { toplam, kdv } = fields;
 
-  if (toplam !== null && toplam <= 0) suspicious.add('toplam');
-  if (kdv !== null && kdv < 0) suspicious.add('kdv');
+  if (toplam !== null && toplam <= 0) flag('toplam', 'Toplam tutar sıfır veya negatif görünüyor');
+  if (kdv !== null && kdv < 0) flag('kdv', 'KDV tutarı negatif görünüyor');
 
   if (toplam !== null && kdv !== null && toplam > 0) {
     if (kdv > toplam) {
       // KDV, toplamdan buyuk olamaz - TOPLAM/TOPKDV yer degistirmis olabilir.
-      suspicious.add('toplam');
-      suspicious.add('kdv');
+      flag('toplam', 'KDV, toplamdan büyük çıktı (Toplam/KDV yer değiştirmiş olabilir)');
+      flag('kdv', 'KDV, toplamdan büyük çıktı (Toplam/KDV yer değiştirmiş olabilir)');
     } else {
       const hasBreakdown = KDV_RATES.some((r) => fields[`kdv${r}`] !== null && fields[`kdv${r}`] !== undefined);
       if (!hasBreakdown && kdv > 0) {
@@ -839,8 +845,9 @@ function findAmbiguousFields(fields) {
           return Math.abs(kdv - expectedKdv) < tolerance;
         });
         if (!matchesAnyRate) {
-          suspicious.add('toplam');
-          suspicious.add('kdv');
+          const reason = 'KDV, toplamın yüzdesi olarak bilinen hiçbir orana (%1/%10/%20) uymuyor';
+          flag('toplam', reason);
+          flag('kdv', reason);
         }
       }
     }
@@ -851,31 +858,62 @@ function findAmbiguousFields(fields) {
     const breakdownToplam = KDV_RATES.reduce((sum, r) => sum + (fields[`toplam${r}`] || 0), 0);
     const breakdownKdv = KDV_RATES.reduce((sum, r) => sum + (fields[`kdv${r}`] || 0), 0);
     if (toplam !== null && Math.abs(breakdownToplam - toplam) > Math.max(0.5, toplam * 0.02)) {
-      suspicious.add('toplam');
+      flag('toplam', 'Kırılım tablosundaki tutarların toplamı genel toplamla uyuşmuyor');
     }
     if (kdv !== null && Math.abs(breakdownKdv - kdv) > Math.max(0.1, kdv * 0.05)) {
-      suspicious.add('kdv');
+      flag('kdv', 'Kırılım tablosundaki KDV tutarlarının toplamı genel KDV ile uyuşmuyor');
+    }
+
+    // Her oranin KENDI icinde tutarli olup olmadigini kontrol et: dahil
+    // tutar = matrah + KDV olmali, ve KDV = matrah * oran/100 olmali.
+    // Toplamlar tutsa bile tek tek satirlar (orn. yanlis urun esleme
+    // yuzunden) hatali olabilir.
+    for (const rate of KDV_RATES) {
+      const dahil = fields[`toplam${rate}`];
+      const matrah = fields[`matrah${rate}`];
+      const rateKdv = fields[`kdv${rate}`];
+      if (dahil === null || matrah === null || rateKdv === null) continue;
+      if (Math.abs(dahil - (matrah + rateKdv)) > Math.max(0.5, dahil * 0.02)) {
+        flag('kdv', `%${rate} satırında dahil tutar, matrah + KDV toplamıyla uyuşmuyor`);
+      }
+      const expectedRateKdv = (matrah * Number(rate)) / 100;
+      if (Math.abs(rateKdv - expectedRateKdv) > Math.max(0.5, expectedRateKdv * 0.05)) {
+        flag('kdv', `%${rate} satırındaki KDV tutarı, matrahın %${rate}'i ile uyuşmuyor`);
+      }
     }
   }
 
   if (fields.tarih) {
     const m = fields.tarih.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
     if (!m) {
-      suspicious.add('tarih');
+      flag('tarih', 'Tarih formatı tanınamadı');
     } else {
       const day = Number(m[1]);
       const month = Number(m[2]);
       const year = Number(m[3]);
       if (month < 1 || month > 12 || day < 1 || day > 31 || year < 2000) {
-        suspicious.add('tarih');
+        flag('tarih', 'Tarih geçersiz görünüyor');
       } else {
         const date = new Date(year, month - 1, day);
-        if (date.getTime() > Date.now() + 24 * 60 * 60 * 1000) suspicious.add('tarih');
+        if (date.getTime() > Date.now() + 24 * 60 * 60 * 1000) {
+          flag('tarih', 'Tarih gelecekte görünüyor');
+        }
       }
     }
   }
 
-  return Array.from(suspicious);
+  if (fields.firma) {
+    const trimmed = fields.firma.trim();
+    const letterCount = (trimmed.match(/\p{L}/gu) || []).length;
+    if (trimmed.length < 3 || letterCount < 2) {
+      flag('firma', 'Firma adı okunamamış veya anlamsız görünüyor');
+    }
+  }
+
+  return Array.from(reasons.entries()).map(([field, reasonSet]) => ({
+    field,
+    reason: Array.from(reasonSet).join('; '),
+  }));
 }
 
 module.exports = { parseReceiptText, parseAmount, findAmbiguousFields };

@@ -109,7 +109,12 @@ projeyi ücretsiz Render.com üzerinde yayınlayabilirsiniz:
    Command: `npm install`, Start Command: `npm start` girin).
 3. **Environment** sekmesinden `GOOGLE_VISION_API_KEY` değişkenini ekleyip
    kendi anahtarınızı yapıştırın.
-4. Deploy tamamlanınca size `https://<servis-adi>.onrender.com` şeklinde
+4. (Opsiyonel ama önerilir) Yedek yapay zeka katmanının canlıda da
+   çalışması için aynı sekmeden `ANTHROPIC_API_KEY` değişkenini de
+   ekleyin (https://console.anthropic.com/settings/keys). Eklemezseniz
+   sistem sorunsuz çalışmaya devam eder, sadece regex başarısız/şüpheli
+   kaldığında alanlar boş/hatalı kalabilir.
+5. Deploy tamamlanınca size `https://<servis-adi>.onrender.com` şeklinde
    sabit bir link verir; bunu telefonunuzdan doğrudan açabilirsiniz.
 
 > Not: Render'ın ücretsiz planında disk kalıcı değildir — her yeniden
