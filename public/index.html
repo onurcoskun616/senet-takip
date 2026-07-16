@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Fiş Tarama Sistemi</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#2f5233" />
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>🧾 Fiş Tarama Sistemi</h1>
+    <div class="header-actions">
+      <button id="themeToggleBtn" class="btn btn-outline" title="Karanlık/Aydınlık mod">🌙</button>
+      <button id="exportBtn" class="btn btn-outline">Excel İndir</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="offlineIndicator" class="offline-indicator hidden"></div>
+
+    <section class="scan-section">
+      <label for="fileInput" class="btn btn-primary btn-large">
+        📷 Fiş Tara
+      </label>
+      <input type="file" id="fileInput" accept="image/*" capture="environment" hidden />
+      <label for="batchFileInput" class="btn btn-outline btn-large">
+        🗂 Birden Fazla Fiş Seç
+      </label>
+      <input type="file" id="batchFileInput" accept="image/*" multiple hidden />
+      <p class="hint">Fişi düz bir zemine koyup net bir fotoğraf çekin. Tüm fiş kadraja sığsın.
+      Birden fazla fişiniz varsa önce fotoğraflarını çekip galeriden hepsini birden seçebilir, sonra sırayla kontrol edip kaydedebilirsiniz.</p>
+    </section>
+
+    <section id="statusSection" class="status-section hidden">
+      <div class="spinner"></div>
+      <p id="statusText">Fiş okunuyor...</p>
+    </section>
+
+    <section id="formSection" class="form-section hidden">
+      <h2 id="formTitle">Fiş Bilgilerini Kontrol Edin</h2>
+      <p class="hint" id="formHint">OCR ile okunan bilgileri kontrol edip gerekirse düzeltin, sonra kaydedin.</p>
+      <form id="receiptForm">
+        <div class="form-row">
+          <label>Tarih<input type="text" name="tarih" placeholder="GG.AA.YYYY" /></label>
+          <label>Saat<input type="text" name="saat" placeholder="SS:DD" /></label>
+        </div>
+        <label>Firma / Mağaza<input type="text" name="firma" placeholder="Mağaza adı" /></label>
+        <div class="form-row">
+          <label>Toplam Tutar (TL)<input type="number" step="0.01" name="toplam" placeholder="0.00" /></label>
+          <label>KDV Tutarı (TL)<input type="number" step="0.01" name="kdv" placeholder="0.00" /></label>
+        </div>
+        <div class="form-row">
+          <label>Ödeme Yöntemi
+            <select name="odemeYontemi">
+              <option value="">Seçiniz</option>
+              <option>Nakit</option>
+              <option>Kredi Kartı</option>
+              <option>Temassız Kart</option>
+              <option>Diğer</option>
+            </select>
+          </label>
+          <label>Belge Türü
+            <select name="belgeTuru" id="belgeTuruSelect">
+              <option>Fiş</option>
+              <option>E-Arşiv Fatura</option>
+              <option>E-Fatura</option>
+              <option>Gider Pusulası</option>
+            </select>
+          </label>
+        </div>
+        <label id="fisNoLabel">Fiş No<input type="text" name="fisNo" /></label>
+        <label>Kalemler (ürün / miktar / tutar)
+          <textarea name="kalemler" rows="3" placeholder="Her satırda bir kalem"></textarea>
+        </label>
+        <label>KDV Detayı (oran / tutar)
+          <textarea name="kdvDetay" rows="2" placeholder="Örn. %20 KDV: 34,17 TL"></textarea>
+        </label>
+
+        <fieldset class="kdv-breakdown">
+          <legend>KDV Oranına Göre Kırılım (güncel oranlar)</legend>
+          <div class="kdv-breakdown-table">
+            <div class="kdv-breakdown-row kdv-breakdown-header">
+              <span>Oran</span>
+              <span>Toplam Tutar</span>
+              <span>Matrah</span>
+              <span>KDV</span>
+            </div>
+            <div class="kdv-breakdown-row">
+              <span>%1</span>
+              <input type="number" step="0.01" name="toplam1" placeholder="0.00" />
+              <input type="number" step="0.01" name="matrah1" placeholder="0.00" />
+              <input type="number" step="0.01" name="kdv1" placeholder="0.00" />
+            </div>
+            <div class="kdv-breakdown-row">
+              <span>%10</span>
+              <input type="number" step="0.01" name="toplam10" placeholder="0.00" />
+              <input type="number" step="0.01" name="matrah10" placeholder="0.00" />
+              <input type="number" step="0.01" name="kdv10" placeholder="0.00" />
+            </div>
+            <div class="kdv-breakdown-row">
+              <span>%20</span>
+              <input type="number" step="0.01" name="toplam20" placeholder="0.00" />
+              <input type="number" step="0.01" name="matrah20" placeholder="0.00" />
+              <input type="number" step="0.01" name="kdv20" placeholder="0.00" />
+            </div>
+          </div>
+        </fieldset>
+
+        <label>Kategori
+          <select name="kategori">
+            <option value="">Seçiniz</option>
+            <option>Gıda</option>
+            <option>Giyim</option>
+            <option>Ulaşım</option>
+            <option>Ofis Malzemesi</option>
+            <option>Fatura</option>
+            <option>Diğer</option>
+          </select>
+        </label>
+        <label>Garanti Bitiş Tarihi (opsiyonel)<input type="date" name="garantiBitis" /></label>
+        <label>Notlar<textarea name="notlar" rows="2"></textarea></label>
+
+        <details class="raw-text-details">
+          <summary>Okunan ham metni göster</summary>
+          <pre id="rawText"></pre>
+        </details>
+
+        <p id="photoPreview" class="hint hidden">
+          <a id="photoLink" href="#" target="_blank" rel="noopener">📄 Taranan belgeyi görüntüle (PDF)</a>
+        </p>
+
+        <p id="aiFallbackNote" class="hint hidden">🤖 Bazı alanlar okunamadığı için yedek yapay zeka modeliyle tamamlandı, lütfen kontrol edin.</p>
+
+        <div class="form-actions">
+          <button type="button" id="cancelBtn" class="btn btn-outline">Vazgeç</button>
+          <button type="submit" id="submitBtn" class="btn btn-primary">Kaydet</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="list-section">
+      <div class="list-header">
+        <h2>Kayıtlı Fişler</h2>
+        <span id="totalSummary" class="total-summary"></span>
+      </div>
+      <div class="backup-bar">
+        <button type="button" id="backupExportBtn" class="btn btn-outline">💾 Yedek İndir (JSON)</button>
+        <label for="backupImportInput" class="btn btn-outline">📤 Yedekten Geri Yükle</label>
+        <input type="file" id="backupImportInput" accept="application/json" hidden />
+      </div>
+      <div class="filter-bar">
+        <label>Başlangıç<input type="date" id="filterStart" /></label>
+        <label>Bitiş<input type="date" id="filterEnd" /></label>
+        <label>Firma<input type="text" id="filterFirma" placeholder="Firma ara..." /></label>
+        <label>Ürün/Ham Metin<input type="text" id="filterText" placeholder="Ürün adı ara..." /></label>
+        <label>Kategori
+          <select id="filterKategori">
+            <option value="">Tümü</option>
+            <option>Gıda</option>
+            <option>Giyim</option>
+            <option>Ulaşım</option>
+            <option>Ofis Malzemesi</option>
+            <option>Fatura</option>
+            <option>Diğer</option>
+          </select>
+        </label>
+        <button type="button" id="filterClear" class="btn btn-outline">Filtreyi Temizle</button>
+      </div>
+      <div class="table-wrap">
+        <table id="receiptsTable">
+          <thead>
+            <tr>
+              <th>Tarih</th>
+              <th>Firma</th>
+              <th>Toplam</th>
+              <th>KDV</th>
+              <th>Belge Türü</th>
+              <th>Fiş/Fatura No</th>
+              <th>Kategori</th>
+              <th>Garanti</th>
+              <th></th>
+              <th></th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="receiptsBody"></tbody>
+        </table>
+      </div>
+      <div id="pager" class="pager hidden">
+        <button type="button" id="pagerPrev" class="btn btn-outline">‹ Önceki</button>
+        <span id="pagerInfo"></span>
+        <button type="button" id="pagerNext" class="btn btn-outline">Sonraki ›</button>
+      </div>
+    </section>
+
+    <section class="summary-section">
+      <h2>Özet <span class="hint">(filtrelenmiş sonuca göre)</span></h2>
+      <h3>Kategoriye Göre Harcama</h3>
+      <div id="categorySummary" class="summary-bars"></div>
+      <h3>Aylık Toplamlar</h3>
+      <div id="monthlySummary" class="summary-bars"></div>
+
+      <h3>Bütçe Durumu <span class="hint">(bu ay, kategoriye göre)</span></h3>
+      <div id="budgetStatus" class="summary-bars"></div>
+      <details class="budget-settings">
+        <summary>Bütçe Ayarlarını Düzenle</summary>
+        <div id="budgetInputs" class="budget-input-list"></div>
+        <button type="button" id="saveBudgetsBtn" class="btn btn-outline">Bütçeleri Kaydet</button>
+      </details>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

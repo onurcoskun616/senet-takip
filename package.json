@@ -1,0 +1,23 @@
+{
+  "name": "senet-takip-fis-tarama",
+  "version": "1.0.0",
+  "description": "Telefon kamerasiyla yazar kasa fisi / alisveris fisi okuyup Excel'e aktaran sistem",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test server/*.test.js"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
+    "better-sqlite3": "^11.3.0",
+    "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
+    "express": "^4.21.0",
+    "multer": "^2.0.0",
+    "pdfkit": "^0.19.1",
+    "sharp": "^0.35.3"
+  }
+}
